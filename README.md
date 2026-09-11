@@ -28,6 +28,9 @@ apps/console-api                 The Console API, and the bindings generated
                                  from the Gateway's contract.
 apps/console-api/src/contract    The browser-facing contract: the schemas both
                                  tiers agree about.
+apps/console-api/src/gateway     The gRPC adapter: the only thing that talks to
+                                 the Gateway, and the only place protobuf is
+                                 named.
 apps/console-api/openapi.json    Those schemas as an OpenAPI document.
                                  Generated. Not edited.
 proto/hue/v1                     The Gateway's contract, vendored. Not edited
@@ -64,6 +67,13 @@ schemas and compares, so a document that has been edited — or one that was lef
 behind when a schema changed — fails `npm test` and names the command that
 fixes it.
 
+The adapter's tests run against a fake Gateway in the same process, over a real
+TLS channel with a certificate `openssl` mints into a temporary directory while
+the tests start — so they exercise the pinned-certificate arrangement and the
+Gateway Token rather than describing it. One of them waits five seconds on
+purpose: a Mutation that runs out of time must be reported as an unknown
+Outcome and never as a failure, and only a real deadline proves that.
+
 `ts-proto` runs with `oneof=unions`, which is load-bearing rather than a
 preference — see [ADR 0005](./docs/adr/0005-colour-exclusivity-guarded-twice.md).
 Note that `proto:generate:check` cannot guard it: change the flag, regenerate,
@@ -79,6 +89,13 @@ browser-facing contract is defined too — the Light a browser sees, the Command
 it sends, the Acknowledgement it gets back, and the one error envelope every
 failure arrives in — along with the OpenAPI document generated from it.
 
-Nothing talks to a Gateway yet, no route is served, and the Console shows no
-Lights. The vocabulary is written down and the five decisions that would
-otherwise read as arbitrary are recorded.
+Something talks to a Gateway now. The adapter opens one channel, verifies the
+pinned certificate, presents the Gateway Token, mints a Correlation ID per
+request, shares concurrent identical reads, retries no Mutation ever, and
+translates every status in the table into the code a browser is answered with.
+It reads Lights, sends Commands, answers with Acknowledgements and listens for
+changes — and it hands the tiers above it no protobuf at all.
+
+No route is served, nothing reaches a browser, and the Console shows no Lights.
+The vocabulary is written down and the five decisions that would otherwise read
+as arbitrary are recorded.
