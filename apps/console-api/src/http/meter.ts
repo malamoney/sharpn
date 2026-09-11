@@ -7,6 +7,10 @@
  * (ADR 0002). A Mutation is the one that changes a house, so it is the one
  * with a ceiling on it.
  *
+ * The ceiling is a parameter and the window is not, because both limits the
+ * edge policy names are per minute: sixty Mutations for a session, and five
+ * login attempts for an address once there is anywhere to attempt one.
+ *
  * The window is a log of when each Mutation was sent rather than a counter
  * that resets on the minute. A counter is cheaper and wrong in the way that
  * matters: it lets a session send a full minute's worth just before the reset
@@ -14,7 +18,7 @@
  * two seconds that straddle it.
  */
 
-/** The ceiling, per session, per window. */
+/** The ceiling on Mutations, per session, per window. */
 export const MUTATIONS_PER_MINUTE = 60;
 
 /** How far back the meter looks. */
@@ -42,7 +46,7 @@ export type Spend =
 
 /** What the routes ask before sending a Command. */
 export interface Meter {
-  /** Counts one Mutation against a session, and says whether it may go. */
+  /** Counts one against a key, and says whether it may go. */
   spend(key: string): Spend;
   /**
    * The sessions the meter is still holding a count for.
@@ -54,13 +58,16 @@ export interface Meter {
 }
 
 /**
- * A meter, over a clock.
+ * A meter that allows `limit` of something per window, per key.
  *
  * The clock is a parameter because the only interesting questions about a
  * window are about time passing, and a test that has to wait a minute to ask
  * one is a test nobody runs.
  */
-export function meterMutations(now: () => number = Date.now): Meter {
+export function meterAtMost(
+  limit: number,
+  now: () => number = Date.now,
+): Meter {
   /** When each session's recent Mutations were sent, oldest first. */
   const sent = new Map<string, number[]>();
 
@@ -84,7 +91,7 @@ export function meterMutations(now: () => number = Date.now): Meter {
       }
 
       const recent = sent.get(key) ?? [];
-      if (recent.length < MUTATIONS_PER_MINUTE) {
+      if (recent.length < limit) {
         sent.set(key, [...recent, at]);
 
         return { allowed: true };

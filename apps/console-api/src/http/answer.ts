@@ -20,6 +20,7 @@ import {
   type ErrorCode,
   type ErrorEnvelope,
 } from "../contract/index.js";
+import { mintCorrelationId, type GatewayResult } from "../gateway/index.js";
 
 /**
  * What a person is told, per code.
@@ -72,7 +73,7 @@ const RETRY_AFTER_SECONDS = 1;
 export const CORRELATION_ID_HEADER = "x-correlation-id";
 
 /** A failure, ready to be written. */
-export interface Refusal {
+interface Refusal {
   code: ErrorCode;
   /**
    * Which request this was. The RPC's own id where one was made, so that the
@@ -94,12 +95,12 @@ export interface Refusal {
  * Writes a failure: the status the catalogue gives the code, and the
  * envelope every one of them arrives in.
  */
-export function refuse(res: Response, refusal: Refusal): void {
+function refuse(response: Response, refusal: Refusal): void {
   const { httpStatus, retryAfter } = ERRORS[refusal.code];
 
-  res.setHeader(CORRELATION_ID_HEADER, refusal.correlationId);
+  response.setHeader(CORRELATION_ID_HEADER, refusal.correlationId);
   if (retryAfter) {
-    res.setHeader(
+    response.setHeader(
       "Retry-After",
       String(refusal.retryAfterSeconds ?? RETRY_AFTER_SECONDS),
     );
@@ -116,15 +117,44 @@ export function refuse(res: Response, refusal: Refusal): void {
     },
   };
 
-  res.status(httpStatus).json(envelope);
+  response.status(httpStatus).json(envelope);
 }
 
-/** Writes what was asked for, under the id the Gateway was asked under. */
-export function answer(
-  res: Response,
-  correlationId: string,
-  value: unknown,
+/**
+ * Writes whatever the Gateway said, whichever way it went.
+ *
+ * The two arms of a `GatewayResult` are the same two arms of a response, and
+ * writing them out at each route is how the third route comes to differ from
+ * the first two by accident. The Correlation ID on both is the RPC's own, so
+ * the line this service logs and the line in the Gateway's journal name one
+ * request — and two browsers whose reads were shared quote one id between
+ * them, which is the truthful answer.
+ */
+export function relay(
+  response: Response,
+  result: GatewayResult<unknown>,
 ): void {
-  res.setHeader(CORRELATION_ID_HEADER, correlationId);
-  res.json(value);
+  if (!result.ok) {
+    refuse(response, result);
+    return;
+  }
+
+  response.setHeader(CORRELATION_ID_HEADER, result.correlationId);
+  response.json(result.value);
+}
+
+/**
+ * Writes a failure for a request that never reached the Gateway.
+ *
+ * There is no RPC whose id to quote, so this request is minted one of its own
+ * — which is the only reason the two are separate functions. Everything
+ * refused here was refused on this service's own account: a body it would not
+ * read, a Command it would not send, a session going faster than it will pass
+ * on.
+ */
+export function refuseWithoutAsking(
+  response: Response,
+  refusal: Omit<Refusal, "correlationId">,
+): void {
+  refuse(response, { ...refusal, correlationId: mintCorrelationId() });
 }

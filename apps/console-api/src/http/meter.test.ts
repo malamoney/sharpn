@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { meterMutations, MUTATIONS_PER_MINUTE, WINDOW_MS } from "./meter.js";
+import { meterAtMost, MUTATIONS_PER_MINUTE, WINDOW_MS } from "./meter.js";
 
 /** A clock that starts at a round number and only moves when told to. */
 function clock(): { now: () => number; advance: (ms: number) => void } {
@@ -24,7 +24,7 @@ function clock(): { now: () => number; advance: (ms: number) => void } {
 
 describe("a session's Mutations", () => {
   it("are allowed up to the minute's worth", () => {
-    const meter = meterMutations(clock().now);
+    const meter = meterAtMost(MUTATIONS_PER_MINUTE, clock().now);
 
     for (let sent = 0; sent < MUTATIONS_PER_MINUTE; sent += 1) {
       expect(meter.spend("session"), `mutation ${sent + 1}`).toEqual({
@@ -35,7 +35,7 @@ describe("a session's Mutations", () => {
 
   it("are refused past it, with how long to wait", () => {
     const time = clock();
-    const meter = meterMutations(time.now);
+    const meter = meterAtMost(MUTATIONS_PER_MINUTE, time.now);
 
     for (let sent = 0; sent < MUTATIONS_PER_MINUTE; sent += 1) {
       meter.spend("session");
@@ -52,7 +52,7 @@ describe("a session's Mutations", () => {
 
   it("never says to wait zero seconds, which reads as 'go now'", () => {
     const time = clock();
-    const meter = meterMutations(time.now);
+    const meter = meterAtMost(MUTATIONS_PER_MINUTE, time.now);
 
     for (let sent = 0; sent < MUTATIONS_PER_MINUTE; sent += 1) {
       meter.spend("session");
@@ -70,7 +70,7 @@ describe("a session's Mutations", () => {
 
   it("are allowed again as the oldest ones age out of the window", () => {
     const time = clock();
-    const meter = meterMutations(time.now);
+    const meter = meterAtMost(MUTATIONS_PER_MINUTE, time.now);
 
     meter.spend("session");
     time.advance(WINDOW_MS / 2);
@@ -90,7 +90,7 @@ describe("a session's Mutations", () => {
 
 describe("one session's Mutations", () => {
   it("are not counted against another's", () => {
-    const meter = meterMutations(clock().now);
+    const meter = meterAtMost(MUTATIONS_PER_MINUTE, clock().now);
 
     for (let sent = 0; sent < MUTATIONS_PER_MINUTE; sent += 1) {
       meter.spend("one");
@@ -104,7 +104,7 @@ describe("one session's Mutations", () => {
 describe("a session that has stopped sending", () => {
   it("is forgotten, so the meter is bounded by who is active", () => {
     const time = clock();
-    const meter = meterMutations(time.now);
+    const meter = meterAtMost(MUTATIONS_PER_MINUTE, time.now);
 
     meter.spend("gone");
     time.advance(WINDOW_MS + 1);

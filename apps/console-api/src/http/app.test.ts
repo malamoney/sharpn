@@ -25,7 +25,7 @@ import {
 } from "../contract/index.js";
 import type { Gateway, GatewayResult, Subscriber } from "../gateway/index.js";
 import { consoleApi, type ConsoleApiParts } from "./app.js";
-import { meterMutations, MUTATIONS_PER_MINUTE } from "./meter.js";
+import { meterAtMost, MUTATIONS_PER_MINUTE } from "./meter.js";
 
 const CORRELATION_ID = "11111111-2222-3333-4444-555555555555";
 
@@ -121,7 +121,7 @@ async function serving(parts: Partial<ConsoleApiParts> = {}): Promise<string> {
     gateway: aGateway(),
     readiness: { channelConnected: () => true, subscribed: () => true },
     version: { sha: "0000000", proto: "e3bef6b" },
-    meter: meterMutations(),
+    meter: meterAtMost(MUTATIONS_PER_MINUTE),
     sessionOf: () => "a-session",
     ...parts,
   });
@@ -429,6 +429,24 @@ describe("how fast a session may change things", () => {
     expect(response.status).toBe(200);
   });
 
+  it("counts a body it would not even read", async () => {
+    const gateway = aGateway();
+    const at = await serving({ gateway });
+
+    for (let sent = 0; sent < MUTATIONS_PER_MINUTE; sent += 1) {
+      const refused = await patch(`${at}/api/v1/lights/kitchen-1`, "{oh no");
+      expect(refused.status, `mutation ${sent + 1}`).toBe(400);
+    }
+
+    // A session sending nonsense as fast as it can is what the meter is for as
+    // much as one sending Commands. A limit that only counted the bodies that
+    // parsed would be a limit on being well behaved.
+    const response = await patch(`${at}/api/v1/lights/kitchen-1`, { on: true });
+
+    expect(response.status).toBe(429);
+    expect(gateway.calls).toBe(0);
+  });
+
   it("does not meter reads", async () => {
     const at = await serving();
 
@@ -482,7 +500,7 @@ describe("whether the process is alive", () => {
     const response = await fetch(`${at}/healthz`);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok" });
+    expect(await response.json()).toEqual({ alive: true });
     expect(gateway.calls).toBe(0);
   });
 });

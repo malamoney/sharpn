@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 import { settingsFrom } from "./config.js";
 import { connectToGateway } from "./gateway/index.js";
 import { consoleApi } from "./http/app.js";
-import { meterMutations } from "./http/meter.js";
+import { meterAtMost, MUTATIONS_PER_MINUTE } from "./http/meter.js";
 import { watchTheGateway } from "./readiness.js";
 
 /**
@@ -34,7 +34,7 @@ const server = createServer(
     gateway,
     readiness,
     version: settings.version,
-    meter: meterMutations(),
+    meter: meterAtMost(MUTATIONS_PER_MINUTE),
     // Where the request came from, until there is a session to count against
     // instead. `request.ip` is the browser's address because exactly one proxy
     // is trusted in front of this process, and the proxy's own if that ever

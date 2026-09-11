@@ -28,7 +28,7 @@ export function healthRoutes({ readiness, version }: HealthRouteParts): Router {
    * Gateway.
    */
   routes.get("/healthz", (_request, response) => {
-    response.json({ status: "ok" });
+    response.json({ alive: true });
   });
 
   /**
