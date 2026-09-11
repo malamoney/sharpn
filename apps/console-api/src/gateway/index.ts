@@ -13,5 +13,5 @@ export type {
   Subscriber,
   Subscription,
 } from "./adapter.js";
-export type { GatewayEvent } from "./codec.js";
+export type { Gap, Invalidation, Notice } from "./codec.js";
 export type { GatewayResult } from "./status.js";

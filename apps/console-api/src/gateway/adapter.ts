@@ -33,9 +33,9 @@ import type { LightGet } from "../gen/hue/v1/lighting.js";
 import {
   acknowledgementFrom,
   commandFor,
-  eventFrom,
   lightFrom,
-  type GatewayEvent,
+  noticeFrom,
+  type Notice,
 } from "./codec.js";
 import { gatewayCredentials, type GatewaySecrets } from "./credentials.js";
 import { CORRELATION_ID_KEY, mintCorrelationId } from "./correlation.js";
@@ -68,8 +68,8 @@ export interface GatewayConfig extends GatewaySecrets {
  * one that is handed a failure among its events has to notice.
  */
 export interface Subscriber {
-  /** Something changed, or something may have been missed. */
-  onEvent(event: GatewayEvent): void;
+  /** A Light's copy may be stale, or events may have been missed. */
+  onNotice(notice: Notice): void;
   /**
    * The stream ended, once. Cleanly when it was cancelled or the Gateway shut
    * down, and otherwise with the code the Gateway's status translates to.
@@ -92,10 +92,10 @@ export interface Gateway {
   /**
    * Changes one Light, and answers with what the Bridge says it did.
    *
-   * Never retried, at any level, for any status. A `PUT` that failed after the
-   * Bridge acted cannot be told from one that failed before it did, which is
-   * why the Gateway refuses to retry a Mutation — and manufacturing a retry in
-   * the tier above is the same mistake wearing a different hat.
+   * Never retried, at any level, for any status. A `PUT` that failed after
+   * the Bridge acted cannot be told from one that failed before it did, which
+   * is why the Gateway refuses to retry a Mutation — and manufacturing a
+   * retry in the tier above is the same mistake wearing a different hat.
    */
   updateLight(
     id: string,
@@ -129,7 +129,15 @@ export interface Gateway {
  */
 export function connectToGateway(config: GatewayConfig): Gateway {
   const credentials = gatewayCredentials(config);
-  const lighting = new LightingServiceClient(config.target, credentials);
+  const lighting = new LightingServiceClient(config.target, credentials, {
+    // "No retries on mutations, ever, anywhere" has to be true of the library
+    // as well as of this file. grpc-js enables retries by default and applies
+    // whatever retry policy arrives in a service config, which is not this
+    // process's to see or to veto — so an UpdateLight could be re-sent with
+    // nothing here having decided to. Off, and the guarantee holds by
+    // construction rather than by the Gateway currently not sending a policy.
+    "grpc.enable_retries": 0,
+  });
   // The same channel, not a second one: `EventServiceClient` is a second set
   // of typed methods over the one connection this process makes.
   const events = new EventServiceClient(config.target, credentials, {
@@ -187,10 +195,10 @@ export function connectToGateway(config: GatewayConfig): Gateway {
     subscribe(subscriber) {
       const correlationId = mintCorrelationId();
       const stream = events.subscribe(
-        // Lights, because this project models nothing else. The filter is the
-        // Gateway's to apply — one upstream connection serves every subscriber
-        // — so asking narrowly saves the Console API from reading events it
-        // has nothing to do with, and saves the Bridge nothing at all.
+        // Lights, because this project models nothing else. The filter is
+        // the Gateway's to apply — one upstream connection serves every
+        // subscriber — so asking narrowly saves the Console API from reading
+        // what it has nothing to do with, and saves the Bridge nothing.
         {
           resourceIds: [],
           resourceTypes: [ResourceIdentifier_Rtype.RTYPE_LIGHT],
@@ -217,9 +225,9 @@ export function connectToGateway(config: GatewayConfig): Gateway {
       listening.add(stop);
 
       stream.on("data", (event: HueEvent) => {
-        const happened = eventFrom(event);
-        if (happened !== undefined) {
-          subscriber.onEvent(happened);
+        const notice = noticeFrom(event);
+        if (notice !== undefined) {
+          subscriber.onNotice(notice);
         }
       });
       stream.on("error", (error: ServiceError) => {

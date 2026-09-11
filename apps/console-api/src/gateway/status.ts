@@ -21,8 +21,8 @@ import {
  * A result rather than a thrown error, for the reason `readLightCommand` gives
  * for returning one: which code a failure is reported under is part of the
  * contract, and deciding it here rather than in a `catch` keeps a route from
- * having to. The Correlation ID is on both arms — it identifies the RPC, which
- * happened whether or not it worked.
+ * having to. The Correlation ID is on both arms — it identifies the RPC,
+ * which happened whether or not it worked.
  */
 export type GatewayResult<T> =
   | { ok: true; correlationId: string; value: T }
@@ -62,12 +62,13 @@ export function failureFrom(
  * a 503 either way, but they name different broken machines, and a person
  * being told which is the whole point of the two codes.
  *
- * The evidence is the trailers. A status the Gateway sent arrives with the
- * response headers that carried it — `content-type` at the least, because
- * every gRPC response has one — where a status `grpc-js` invented for itself
- * arrives with none. This is checked rather than the channel's connectivity
- * state, which is the other candidate and is worse: the state is read after
- * the fact and may have changed, where the trailers belong to this RPC.
+ * The evidence is the trailers. A status the Gateway sent travelled as HTTP/2
+ * headers, so it arrives with them — `content-type` at the least, which every
+ * gRPC response carries, and a trailers-only response carries too. A status
+ * `grpc-js` invented for itself never left the client and arrives with none.
+ * This is checked rather than the channel's connectivity state, which is the
+ * other candidate and is worse: the state is read after the fact and may have
+ * changed, where the trailers belong to this RPC.
  *
  * It is asked only of a status that could have been generated locally. Every
  * other code in the table is one only a server sends, and `DEADLINE_EXCEEDED`
@@ -79,9 +80,9 @@ function wasSentByTheGateway(error: ServiceError): boolean {
     return true;
   }
 
-  return hasAny(error.metadata);
+  return carriesTrailers(error.metadata);
 }
 
-function hasAny(metadata: Metadata | undefined): boolean {
+function carriesTrailers(metadata: Metadata | undefined): boolean {
   return metadata !== undefined && Object.keys(metadata.getMap()).length > 0;
 }

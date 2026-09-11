@@ -68,7 +68,9 @@ export function lightFrom(reported: LightGet): Light {
  * It is deliberately not `unknown_archetype`: that is Hue's own value, chosen
  * by whoever set the Light up.
  */
-function archetypeFrom(reported: ReportedArchetype | undefined): Light["archetype"] {
+function archetypeFrom(
+  reported: ReportedArchetype | undefined,
+): Light["archetype"] {
   if (reported === undefined) {
     return "unspecified";
   }
@@ -92,9 +94,9 @@ function archetypeFrom(reported: ReportedArchetype | undefined): Light["archetyp
  *
  * The colour and the colour temperature are one field here, because the
  * contract models them as a `oneof` and ts-proto was asked for a discriminated
- * union. A Command carrying both cannot be built — it does not typecheck — and
- * cannot be received either, because the schema refuses it first. Both guards
- * are needed; see ADR 0005.
+ * union. A Command carrying both cannot be built — it does not typecheck —
+ * and cannot be received either, because the schema refuses it first. Both
+ * guards are needed; see ADR 0005.
  */
 export function commandFor(asked: LightCommand): LightPut {
   return {
@@ -124,8 +126,8 @@ function colourFor(asked: LightCommand): LightPut["colour"] {
 /**
  * What the Bridge says the Mutation did, which is not what the Light now is.
  *
- * The Resources are identifiers — a `rid` and an `rtype` — and the errors are
- * the Bridge's own prose. Neither is state, and ADR 0001 is why this is not
+ * The Resources are identifiers — a `rid` and an `rtype` — and the errors
+ * are the Bridge's own prose. Neither is state, and ADR 0001 is why this is not
  * quietly improved into something that carries a Light.
  */
 export function acknowledgementFrom(
@@ -199,43 +201,58 @@ function identifierFrom(reported: {
 }
 
 /**
- * Something the Gateway had to tell a Subscriber.
+ * Notice that the Console's copy of a Light may no longer be true.
  *
- * A change carries an id and a type and nothing else. The Gateway offers the
- * changed properties — `ResourceChange.update` is a typed `LightGet` — and
- * this is where that offer is declined: only the properties that changed are
- * in it, so it is a change shaped like a Light rather than a Light, and
- * nothing in a type would tell the two apart once it had been passed on. What
- * a change asserts is that a copy may be wrong, and the only thing to do with
- * one is read that Light again (ADR 0002).
+ * It says which Light and says nothing about how it differs, so the only thing
+ * to do with one is read that Light again. The Gateway offers more —
+ * `ResourceChange.update` is a typed `LightGet` — and this is where the offer
+ * is declined: only the properties that changed are in it, so it is a change
+ * shaped like a Light rather than a Light, and nothing in a type would tell
+ * the two apart once it had been passed on (ADR 0002).
  */
-export type GatewayEvent =
-  | {
-      kind: "change";
-      change: "added" | "changed" | "removed";
-      resource: ResourceIdentifier;
-    }
-  | {
-      kind: "gap";
-      cause: "reconnected" | "subscriber_behind" | "unspecified";
-      missed: number;
-    };
+export interface Invalidation {
+  kind: "invalidation";
+  change: "added" | "changed" | "removed";
+  resource: ResourceIdentifier;
+}
 
 /**
- * What one message on the stream means, or nothing if it means nothing.
+ * Events may have been missed, and nobody can say whether any were.
  *
- * An event carrying neither a change nor a Gap is one this build cannot read —
- * a `happened` the Gateway added after these bindings were generated. It is
- * dropped rather than guessed at.
+ * Not an Invalidation: it names no Resource, and the Gateway follows every Gap
+ * it announces on reconnect with a Resync whose synthesised changes arrive as
+ * ordinary Invalidations. Refetching on the Gap itself would duplicate work
+ * already in flight.
  */
-export function eventFrom(event: HueEvent): GatewayEvent | undefined {
+export interface Gap {
+  kind: "gap";
+  cause: "reconnected" | "subscriber_behind" | "unspecified";
+  missed: number;
+}
+
+/** One thing the Gateway had to tell a Subscriber. */
+export type Notice = Invalidation | Gap;
+
+/**
+ * What one message on the stream means, or nothing if it means nothing here.
+ *
+ * Two messages mean nothing. One carrying neither a change nor a Gap is a
+ * `happened` the Gateway added after these bindings were generated. One
+ * carrying a change with no Resource names no Light, and an Invalidation that
+ * names no Light is the one thing an Invalidation cannot be — there would be
+ * nothing to read again. Both are dropped rather than guessed at.
+ */
+export function noticeFrom(event: HueEvent): Notice | undefined {
   if (event.happened?.$case === "change") {
     const { change } = event.happened;
+    if (change.resource === undefined) {
+      return undefined;
+    }
 
     return {
-      kind: "change",
+      kind: "invalidation",
       change: changeFrom(change.type),
-      resource: identifierFrom(change.resource ?? { rid: "", rtype: 0 }),
+      resource: identifierFrom(change.resource),
     };
   }
 
@@ -258,7 +275,7 @@ export function eventFrom(event: HueEvent): GatewayEvent | undefined {
  * `TYPE_ERROR` is the interesting one: the Bridge reports it about a Resource,
  * and the Resource is exactly what may no longer be what the Console believes.
  */
-function changeFrom(type: Event_Type): "added" | "changed" | "removed" {
+function changeFrom(type: Event_Type): Invalidation["change"] {
   switch (type) {
     case Event_Type.TYPE_ADD:
       return "added";
@@ -269,7 +286,7 @@ function changeFrom(type: Event_Type): "added" | "changed" | "removed" {
   }
 }
 
-function causeFrom(cause: Gap_Cause): "reconnected" | "subscriber_behind" | "unspecified" {
+function causeFrom(cause: Gap_Cause): Gap["cause"] {
   switch (cause) {
     case Gap_Cause.CAUSE_RECONNECTED:
       return "reconnected";

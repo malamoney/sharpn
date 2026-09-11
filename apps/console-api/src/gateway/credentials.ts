@@ -22,19 +22,29 @@ import {
   type ChannelCredentials,
 } from "@grpc/grpc-js";
 
-/** Where the pinned certificate and the Gateway Token are read from. */
+/**
+ * Where the pinned certificate and the Gateway Token are read from.
+ *
+ * Both are files under `/run/secrets/` in the deployment, which is what a
+ * compose secret is mounted as. Putting them there — and the runbook for
+ * rotating them — belongs to the containers and secrets work; what belongs
+ * here is that they are paths to files at all.
+ */
 export interface GatewaySecrets {
   /** The Gateway's self-signed certificate, PEM, used as the only root. */
   certificateFile: string;
   /**
-   * The Gateway Token. A file, because a token in an environment variable is
-   * a token in `docker inspect`, in a crash dump and in every child process.
+   * The Gateway Token. A file, and never an environment variable or an
+   * argument: either of those is a token in `docker inspect`, in a crash
+   * dump, in a process listing and in every child process.
    */
   tokenFile: string;
 }
 
-/** The channel's credentials: the pinned root, and the token composed onto it. */
-export function gatewayCredentials(secrets: GatewaySecrets): ChannelCredentials {
+/** The channel's credentials: the pinned root, with the token composed on. */
+export function gatewayCredentials(
+  secrets: GatewaySecrets,
+): ChannelCredentials {
   const certificate = readFileSync(secrets.certificateFile);
 
   return credentials
@@ -45,9 +55,9 @@ export function gatewayCredentials(secrets: GatewaySecrets): ChannelCredentials 
 /**
  * The Gateway Token as `authorization: Bearer <token>` on every call.
  *
- * There is no mTLS on this hop — `serve.py` asks for no client certificate —
- * so this header is the entire authorization story, and it is the reason the
- * certificate above is verified rather than merely encrypted against.
+ * There is no mTLS on this hop — `serve.py` asks for no client certificate
+ * — so this header is the entire authorization story, and it is the reason
+ * the certificate above is verified rather than merely encrypted against.
  */
 function bearerToken(token: string): CallCredentials {
   return credentials.createFromMetadataGenerator((_params, callback) => {

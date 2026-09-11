@@ -42,6 +42,9 @@ be handed a pinned leaf.
   harmless, which is worth knowing when it is being copied between machines.
 - Certificate verification failure and Gateway Token rejection are distinct
   failures with distinct causes, and both are deployment faults rather than
-  anything a browser user did. They surface as `500 GATEWAY_MISCONFIGURED` and
-  `503 GATEWAY_UNREACHABLE` respectively — never as a 401, which would send a
-  person to a login screen that cannot help them.
+  anything a browser user did. A rejected token is the Gateway answering
+  `UNAUTHENTICATED` over a channel that came up, and surfaces as
+  `500 GATEWAY_MISCONFIGURED`. A certificate that does not verify means no
+  channel came up at all, which is indistinguishable from there being no
+  Gateway there, and surfaces as `503 GATEWAY_UNREACHABLE`. Neither is ever a
+  401, which would send a person to a login screen that cannot help them.

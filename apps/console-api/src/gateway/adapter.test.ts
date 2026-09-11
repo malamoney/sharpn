@@ -27,7 +27,15 @@ import {
   type ServerWritableStream,
   type sendUnaryData,
 } from "@grpc/grpc-js";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import type { LightGet } from "../gen/hue/v1/lighting.js";
 import { Event_Type } from "../gen/hue/v1/events.js";
@@ -57,8 +65,8 @@ import {
   UNARY_DEADLINE_MS,
   type Gateway,
   type GatewayConfig,
-  type GatewayEvent,
   type GatewayResult,
+  type Notice,
 } from "./index.js";
 
 const TOKEN = "a-gateway-token";
@@ -102,7 +110,7 @@ interface Answers {
   subscribe?: (call: ServerWritableStream<SubscribeRequest, HueEvent>) => void;
 }
 
-let secrets: string;
+let secretsDirectory: string;
 let certificateFile: string;
 let strangerCertificateFile: string;
 let tokenFile: string;
@@ -110,17 +118,24 @@ let server: Server;
 let target: string;
 let answers: Answers;
 let gateway: Gateway | undefined;
-/** Every `UpdateLightRequest` the fake Gateway received, exactly as it arrived. */
+/** Every `UpdateLightRequest` the fake Gateway got, exactly as it arrived. */
 let sent: Uint8Array[] = [];
 
-beforeAll(async () => {
-  secrets = mkdtempSync(join(tmpdir(), "sharpn-gateway-"));
-  certificateFile = join(secrets, "gateway.pem");
-  tokenFile = join(secrets, "gateway-token");
-  const keyFile = join(secrets, "gateway-key.pem");
+function certificateNamed(name: string): string {
+  return join(secretsDirectory, `${name}.pem`);
+}
 
-  // `-subj` and `-addext` rather than a config file, and stderr thrown away:
-  // openssl writes its progress dots there, and a test run is not the place.
+/**
+ * A self-signed certificate for `localhost`, and the key that goes with it.
+ *
+ * One name, one verifier, no authority — ADR 0004's arrangement, which is
+ * cheap enough to mint per test run and leaves no key in the repository.
+ * `-subj` and `-addext` rather than a config file, and stderr thrown away:
+ * openssl writes its progress there, and a test run is not the place.
+ */
+function mintCertificate(name: string): string {
+  const keyFile = join(secretsDirectory, `${name}-key.pem`);
+
   execFileSync(
     "openssl",
     [
@@ -134,33 +149,7 @@ beforeAll(async () => {
       "-keyout",
       keyFile,
       "-out",
-      certificateFile,
-      "-days",
-      "2",
-      "-subj",
-      "/CN=localhost",
-      "-addext",
-      "subjectAltName=DNS:localhost",
-    ],
-    { stdio: ["ignore", "ignore", "ignore"] },
-  );
-  // A second certificate, for the same name, that nothing trusts. It is what
-  // a Gateway presenting the wrong certificate looks like.
-  strangerCertificateFile = join(secrets, "stranger.pem");
-  execFileSync(
-    "openssl",
-    [
-      "req",
-      "-x509",
-      "-newkey",
-      "ec",
-      "-pkeyopt",
-      "ec_paramgen_curve:prime256v1",
-      "-nodes",
-      "-keyout",
-      join(secrets, "stranger-key.pem"),
-      "-out",
-      strangerCertificateFile,
+      certificateNamed(name),
       "-days",
       "2",
       "-subj",
@@ -171,13 +160,28 @@ beforeAll(async () => {
     { stdio: ["ignore", "ignore", "ignore"] },
   );
 
+  return keyFile;
+}
+
+beforeAll(async () => {
+  secretsDirectory = mkdtempSync(join(tmpdir(), "sharpn-gateway-"));
+  const keyFile = mintCertificate("gateway");
+  // A second certificate, for the same name, that nothing trusts: what a
+  // Gateway presenting the wrong certificate looks like.
+  mintCertificate("stranger");
+  certificateFile = certificateNamed("gateway");
+  strangerCertificateFile = certificateNamed("stranger");
+
+  // Written with a trailing newline, because that is what a file somebody
+  // wrote looks like — and a newline in a header value is not a header.
+  tokenFile = join(secretsDirectory, "gateway-token");
   writeFileSync(tokenFile, `${TOKEN}\n`);
 
   server = new Server();
   // The update method is registered with a deserializer that keeps the bytes
   // it was given. Presence is the whole contract of a Command, and presence is
-  // a property of the message on the wire — omitted, `false` and `0` are three
-  // different encodings and only two of them are visible in a decoded object.
+  // a property of the message on the wire — omitted, `false` and `0` are
+  // three different encodings, and only two of them survive being decoded.
   const capturing: typeof LightingServiceService = {
     ...LightingServiceService,
     updateLight: {
@@ -299,7 +303,9 @@ describe("what the Gateway is told about a call", () => {
   });
 
   it("mints a Correlation ID per request, not per channel", async () => {
-    answers = { listLights: (_call, callback) => callback(null, { lights: [] }) };
+    answers = {
+      listLights: (_call, callback) => callback(null, { lights: [] }),
+    };
 
     const gateway = connect();
     const first = await gateway.listLights();
@@ -327,7 +333,7 @@ describe("reading one Light", () => {
 });
 
 describe("changing a Light", () => {
-  it("answers with an Acknowledgement, which is never the changed Light", async () => {
+  it("answers with an Acknowledgement, never with a Light", async () => {
     answers = {
       updateLight: (_call, callback) =>
         callback(null, {
@@ -348,7 +354,7 @@ describe("changing a Light", () => {
     });
   });
 
-  it("carries the Correlation ID of the RPC it came from, in the Acknowledgement", async () => {
+  it("carries the Correlation ID of the RPC it came from", async () => {
     // The Acknowledgement is what a browser is given, so it carries its own
     // Correlation ID rather than depending on whoever relays it to add one.
     // It is the same id: there was one request.
@@ -390,13 +396,14 @@ describe("changing a Light", () => {
     },
   );
 
-  it("calls an empty answer unknown rather than success, and says so", async () => {
+  it("calls an empty answer unknown, not success, and says so", async () => {
     // Should be unreachable: the Gateway refuses an empty Command before it
     // sends one. If it happens an assumption is wrong, and claiming success is
     // the one answer that cannot be taken back.
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     answers = {
-      updateLight: (_call, callback) => callback(null, { updated: [], errors: [] }),
+      updateLight: (_call, callback) =>
+        callback(null, { updated: [], errors: [] }),
     };
 
     const result = await connect().updateLight("kitchen-1", { on: true });
@@ -406,12 +413,15 @@ describe("changing a Light", () => {
     logged.mockRestore();
   });
 
-  it("passes a Resource type it has never heard of through as text", async () => {
+  it("passes a Resource type it never heard of through as text", async () => {
     // A Resource type newer than these bindings is still a Resource the Bridge
     // named. The tier that is only relaying it must not turn it into an error.
     answers = {
       updateLight: (_call, callback) =>
-        callback(null, { updated: [{ rid: "something-new", rtype: 34 }], errors: [] }),
+        callback(null, {
+          updated: [{ rid: "something-new", rtype: 34 }],
+          errors: [],
+        }),
     };
 
     const result = await connect().updateLight("kitchen-1", { on: true });
@@ -460,7 +470,7 @@ describe("what a Gateway status becomes", () => {
     expect(result).toMatchObject({ ok: false, code: expected });
   });
 
-  it("gives one code to FAILED_PRECONDITION's three causes, and quotes each", async () => {
+  it("gives FAILED_PRECONDITION one code, and quotes each cause", async () => {
     // Never paired, link button not pressed, and the Bridge answering 401 or
     // 403 because the Application Key was revoked. They are distinguishable
     // only by prose, and the prose was written to be actionable — so it is
@@ -485,7 +495,7 @@ describe("what a Gateway status becomes", () => {
     }
   });
 
-  it("answers with the Correlation ID it sent, so a failure can be looked up", async () => {
+  it("answers with the Correlation ID it sent", async () => {
     let seen = "";
     answers = {
       getLight: (call, callback) => {
@@ -501,7 +511,7 @@ describe("what a Gateway status becomes", () => {
 });
 
 describe("a Gateway that cannot be reached at all", () => {
-  it("is not the Bridge being unreachable, though both arrive as UNAVAILABLE", async () => {
+  it("is not the Bridge being unreachable, whatever gRPC says", async () => {
     // Two rows of the table share a gRPC status: the Gateway sends UNAVAILABLE
     // when it cannot reach the Bridge, and grpc-js produces the same code
     // itself when there is no Gateway on the other end. They are both 503s,
@@ -515,7 +525,9 @@ describe("a Gateway that cannot be reached at all", () => {
     // ADR 0004: the pinned PEM is the channel's only trust root, so a Gateway
     // presenting anything else is not connected to. A deployment fault, and
     // never a 401 — nobody's browser has a credential that would help.
-    answers = { listLights: (_call, callback) => callback(null, { lights: [] }) };
+    answers = {
+      listLights: (_call, callback) => callback(null, { lights: [] }),
+    };
 
     const result = await connect({
       certificateFile: strangerCertificateFile,
@@ -526,7 +538,7 @@ describe("a Gateway that cannot be reached at all", () => {
 });
 
 describe("the deadline on a unary call", () => {
-  it("is the five seconds the Gateway's retry policy was written for", async () => {
+  it("is the five seconds the Gateway's retries were written for", async () => {
     // Read off what the Gateway is actually told, rather than off the constant:
     // the Gateway bounds its three jittered retries of a Safe Read inside the
     // caller's deadline, so this number is an input to its retry policy and
@@ -578,7 +590,7 @@ describe("the deadline on a unary call", () => {
 });
 
 describe("concurrent identical reads", () => {
-  /** A Gateway that answers nothing until it is let go, and counts its calls. */
+  /** A Gateway that answers nothing until it is let go, counting calls. */
   function heldGateway() {
     let release = () => {};
     const held = new Promise<void>((resolve) => {
@@ -600,7 +612,10 @@ describe("concurrent identical reads", () => {
       updateLight: async (_call, callback) => {
         calls.push("update");
         await held;
-        callback(null, { updated: [{ rid: "kitchen-1", rtype: RTYPE_LIGHT }], errors: [] });
+        callback(null, {
+          updated: [{ rid: "kitchen-1", rtype: RTYPE_LIGHT }],
+          errors: [],
+        });
       },
     };
 
@@ -640,7 +655,7 @@ describe("concurrent identical reads", () => {
     expect([...calls].sort()).toEqual(["hallway-2", "kitchen-1", "list"]);
   });
 
-  it("are not remembered once answered, because nothing here is a cache", async () => {
+  it("are not remembered once answered: nothing here is a cache", async () => {
     // The Bridge stays authoritative: a second read is a second question, and
     // an answer held over from the first would be the Console API inventing a
     // light state of its own.
@@ -723,7 +738,7 @@ describe("what a Command becomes on the wire", () => {
     ]);
   });
 
-  it("sends an On that says false, which is not the same as sending no On", async () => {
+  it("sends an On that says false, which is not sending no On", async () => {
     // The whole point of the contract's presence rule, in seven bytes: `false`
     // is the default of a proto3 bool and is not written, so `On{on: false}`
     // encodes as a submessage with no contents — present, and empty. An
@@ -751,47 +766,105 @@ describe("what a Command becomes on the wire", () => {
     ]);
   });
 
-  it("puts a colour temperature in the oneof, and nothing in the other half", async () => {
-    // ADR 0005: `color` and `color_temperature` are one field on the wire, so
-    // a message carrying both is not an error — it is quietly narrowed to
-    // whichever was written last. The type says which of the two this is, and
-    // a request asking for both never gets this far: the schema refuses it,
-    // which is `command.test.ts`'s business.
-    const request = UpdateLightRequest.decode(
-      await bytesSentFor({ colorTemperatureMirek: 366 }),
-    );
-
-    expect(request.command).toEqual({
-      colour: { $case: "colorTemperature", colorTemperature: { mirek: 366 } },
-    });
+  it("puts a colour temperature on the wire, and no colour", async () => {
+    // ADR 0005: `color` is field 7 and `color_temperature` is field 5, and
+    // they are one `oneof`. A message carrying both is not an error — it is
+    // narrowed, silently, to whichever was written last — so the assertion
+    // that matters is that one field number is on the wire and the other is
+    // nowhere on it. That a message carrying both loses one is asserted on a
+    // serialized `LightPut` in `src/gen.test.ts`; it cannot happen from here,
+    // because the discriminated union will not build one and the schema
+    // refuses a body asking for both before anything is built.
+    expect([...(await bytesSentFor({ colorTemperatureMirek: 366 }))]).toEqual([
+      ...forLightK,
+      // The command, five bytes of it.
+      0x12, 0x05,
+      // Field 5, the colour temperature, three bytes of it.
+      0x2a, 0x03,
+      // Its mirek: field 1, and 366 as a varint.
+      0x08, 0xee, 0x02,
+    ]);
   });
 
-  it("puts a colour in the oneof, and nothing in the other half", async () => {
-    const request = UpdateLightRequest.decode(
-      await bytesSentFor({ colorXy: { x: 0.17, y: 0.7 } }),
-    );
+  it("puts a colour on the wire, and no colour temperature", async () => {
+    const asked = { colorXy: { x: 0.5, y: 0.25 } };
 
-    expect(request.command).toEqual({
-      colour: { $case: "color", color: { xy: { x: 0.17, y: 0.7 } } },
-    });
+    expect([...(await bytesSentFor(asked))]).toEqual([
+      ...forLightK,
+      // The command, twenty-two bytes of it.
+      0x12, 0x16,
+      // Field 7, the colour, twenty bytes of it — and no field 5 anywhere.
+      0x3a, 0x14,
+      // Its xy: field 1, eighteen bytes of gamut position.
+      0x0a, 0x12,
+      // x: field 1, a double, 0.5 little-endian.
+      0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xe0, 0x3f,
+      // y: field 2, a double, 0.25 little-endian.
+      0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xd0, 0x3f,
+    ]);
+  });
+});
+
+describe("what is never sent twice", () => {
+  /** Counts what the Gateway received, and refuses every one of them. */
+  function refusing(code: status) {
+    let calls = 0;
+    const refusal = refuse(code, "the Bridge is not answering");
+
+    answers = {
+      listLights: (call, callback) => {
+        calls += 1;
+        refusal(call, callback);
+      },
+      updateLight: (call, callback) => {
+        calls += 1;
+        refusal(call, callback);
+      },
+    };
+
+    return () => calls;
+  }
+
+  it("a Mutation, whatever the Gateway answered", async () => {
+    // "No retries on mutations, ever, anywhere." A PUT that failed after the
+    // Bridge acted cannot be told from one that failed before it did, which
+    // is why the Gateway refuses to retry one — and why nothing here may.
+    // UNAVAILABLE is the status a retrying client would find most tempting.
+    const calls = refusing(status.UNAVAILABLE);
+
+    const result = await connect().updateLight("kitchen-1", { on: true });
+
+    expect(result).toMatchObject({ ok: false, code: "BRIDGE_UNREACHABLE" });
+    expect(calls()).toBe(1);
+  });
+
+  it("a read, because the Gateway has already retried it", async () => {
+    // Three times, with jittered backoff, inside the deadline this call was
+    // given. A fourth from here would be a retry policy nobody wrote down.
+    const calls = refusing(status.UNAVAILABLE);
+
+    const result = await connect().listLights();
+
+    expect(result).toMatchObject({ ok: false, code: "BRIDGE_UNREACHABLE" });
+    expect(calls()).toBe(1);
   });
 });
 
 describe("subscribing to what the Bridge is doing", () => {
   /** Everything one subscription saw, and how it ended. */
   function watch(gateway: Gateway) {
-    const events: GatewayEvent[] = [];
+    const notices: Notice[] = [];
     let ended: GatewayResult<void> | undefined;
 
     const subscription = gateway.subscribe({
-      onEvent: (event) => events.push(event),
+      onNotice: (notice) => notices.push(notice),
       onEnded: (result) => {
         ended = result;
       },
     });
 
     return {
-      events,
+      notices,
       subscription,
       ending: () => ended,
       until: async (enough: () => boolean) => {
@@ -824,7 +897,7 @@ describe("subscribing to what the Bridge is doing", () => {
     };
   }
 
-  it("reports which Resource changed, and nothing about how", async () => {
+  it("reports which Light may be stale, and nothing about how", async () => {
     answers = {
       subscribe: (call) => {
         call.write(aChange(Event_Type.TYPE_UPDATE, "kitchen-1"));
@@ -832,11 +905,11 @@ describe("subscribing to what the Bridge is doing", () => {
     };
 
     const watching = watch(connect());
-    await watching.until(() => watching.events.length === 1);
+    await watching.until(() => watching.notices.length === 1);
 
-    expect(watching.events).toEqual([
+    expect(watching.notices).toEqual([
       {
-        kind: "change",
+        kind: "invalidation",
         change: "changed",
         resource: { rid: "kitchen-1", rtype: "light" },
       },
@@ -858,12 +931,50 @@ describe("subscribing to what the Bridge is doing", () => {
     };
 
     const watching = watch(connect());
-    await watching.until(() => watching.events.length === 1);
+    await watching.until(() => watching.notices.length === 1);
 
-    expect(watching.events[0]).toMatchObject({ kind: "change", change });
+    expect(watching.notices[0]).toMatchObject({
+      kind: "invalidation",
+      change,
+    });
   });
 
-  it("treats a Gap as a message on the stream, not the end of one", async () => {
+  it("says nothing at all about a change that names no Resource", async () => {
+    // An Invalidation that names no Light is the one thing an Invalidation
+    // cannot be: there would be nothing to read again. It is dropped rather
+    // than passed on as a Light with no id, which is a Light nobody can find.
+    answers = {
+      subscribe: (call) => {
+        call.write({
+          bridgeId: "bridge-1",
+          gatewayTime: new Date(),
+          happened: {
+            $case: "change",
+            change: {
+              eventId: "e1",
+              type: Event_Type.TYPE_UPDATE,
+              resource: undefined,
+              update: undefined,
+            },
+          },
+        });
+        call.write(aChange(Event_Type.TYPE_UPDATE, "kitchen-1"));
+      },
+    };
+
+    const watching = watch(connect());
+    await watching.until(() => watching.notices.length === 1);
+
+    expect(watching.notices).toEqual([
+      {
+        kind: "invalidation",
+        change: "changed",
+        resource: { rid: "kitchen-1", rtype: "light" },
+      },
+    ]);
+  });
+
+  it("treats a Gap as a message on the stream, not its end", async () => {
     // The stream does not end because the Bridge went away. A Gap says events
     // may have been missed and can never be disproven, and the Gateway follows
     // every one it announces on reconnect with a Resync.
@@ -872,16 +983,19 @@ describe("subscribing to what the Bridge is doing", () => {
         call.write({
           bridgeId: "bridge-1",
           gatewayTime: new Date(),
-          happened: { $case: "gap", gap: { cause: Gap_Cause.CAUSE_RECONNECTED, missed: 0 } },
+          happened: {
+            $case: "gap",
+            gap: { cause: Gap_Cause.CAUSE_RECONNECTED, missed: 0 },
+          },
         });
         call.write(aChange(Event_Type.TYPE_UPDATE, "kitchen-1"));
       },
     };
 
     const watching = watch(connect());
-    await watching.until(() => watching.events.length === 2);
+    await watching.until(() => watching.notices.length === 2);
 
-    expect(watching.events[0]).toEqual({
+    expect(watching.notices[0]).toEqual({
       kind: "gap",
       cause: "reconnected",
       missed: 0,
@@ -889,7 +1003,7 @@ describe("subscribing to what the Bridge is doing", () => {
     expect(watching.ending()).toBeUndefined();
   });
 
-  it("asks for Lights, with the Gateway Token and a Correlation ID and no deadline", async () => {
+  it("asks for Lights, with credentials and no deadline", async () => {
     // The Gateway's DeadlineInterceptor exempts streaming RPCs deliberately,
     // and a deadline set here would be fighting that: a subscription is meant
     // to last until it is cancelled.
@@ -906,7 +1020,7 @@ describe("subscribing to what the Bridge is doing", () => {
     };
 
     const watching = watch(connect());
-    await watching.until(() => watching.events.length === 1);
+    await watching.until(() => watching.notices.length === 1);
 
     expect(deadline).toBe(Infinity);
     expect(metadata["authorization"]).toBe(`Bearer ${TOKEN}`);
@@ -918,7 +1032,7 @@ describe("subscribing to what the Bridge is doing", () => {
     expect(asked?.resourceIds).toEqual([]);
   });
 
-  it("ends cleanly when it is cancelled, and says nothing after that", async () => {
+  it("ends cleanly when cancelled, and says nothing after", async () => {
     let writing: NodeJS.Timeout | undefined;
     answers = {
       subscribe: (call) => {
@@ -931,7 +1045,7 @@ describe("subscribing to what the Bridge is doing", () => {
     };
 
     const watching = watch(connect());
-    await watching.until(() => watching.events.length > 0);
+    await watching.until(() => watching.notices.length > 0);
     watching.subscription.cancel();
     await watching.until(() => watching.ending() !== undefined);
 
@@ -953,7 +1067,7 @@ describe("subscribing to what the Bridge is doing", () => {
 
     const gateway = connect();
     const watching = watch(gateway);
-    await watching.until(() => watching.events.length === 1);
+    await watching.until(() => watching.notices.length === 1);
     gateway.close();
     await watching.until(() => watching.ending() !== undefined);
 
