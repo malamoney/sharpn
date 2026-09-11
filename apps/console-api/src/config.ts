@@ -17,10 +17,17 @@ import type { Version } from "./version.js";
 /** Where a compose secret is mounted, which is where both of these live. */
 const SECRETS = "/run/secrets";
 
+/** Where the password hash and the session-signing secret live. */
+export interface AuthConfig {
+  passwordHashFile: string;
+  sessionSecretFile: string;
+}
+
 /** Everything `server.ts` needs to start. */
 export interface Settings {
   port: number;
   gateway: GatewayConfig;
+  auth: AuthConfig;
   version: Version;
 }
 
@@ -34,6 +41,11 @@ export function settingsFrom(
       certificateFile:
         env["GATEWAY_CERTIFICATE_FILE"] ?? `${SECRETS}/gateway-certificate`,
       tokenFile: env["GATEWAY_TOKEN_FILE"] ?? `${SECRETS}/gateway-token`,
+    },
+    auth: {
+      passwordHashFile: env["PASSWORD_HASH_FILE"] ?? `${SECRETS}/password-hash`,
+      sessionSecretFile:
+        env["SESSION_SECRET_FILE"] ?? `${SECRETS}/session-secret`,
     },
     version: {
       // Not fatal when absent, and not pretended about either. A build that

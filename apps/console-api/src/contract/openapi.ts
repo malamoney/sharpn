@@ -27,6 +27,7 @@ import {
   lightCapabilitiesSchema,
   lightSchema,
 } from "./light.js";
+import { loginCommandSchema } from "./login.js";
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -130,6 +131,13 @@ components.add(acknowledgementSchema, {
     "What an update did, which is never what a Light now is. It names the " +
     "Resources the Bridge says it changed and what it refused, and it has " +
     "nowhere to carry state — read the Light to find out what it became.",
+});
+
+components.add(loginCommandSchema, {
+  id: "LoginCommand",
+  description:
+    "The one password, and nothing else: there is no account to name " +
+    "alongside it.",
 });
 
 components.add(errorEnvelopeSchema, {
@@ -249,6 +257,48 @@ export const openApiDocument: OpenApiDocument = {
       "schemas in `apps/console-api/src/contract`; edit those, not this.",
   },
   paths: {
+    "/api/v1/session": {
+      post: {
+        operationId: "createSession",
+        summary: "Sign in",
+        description:
+          "The one password, checked against the argon2id hash this " +
+          "service was deployed with. A success carries no body — the " +
+          "session is the cookie this sets, `HttpOnly`, `Secure`, " +
+          "`SameSite=Strict`, and there is no account to describe.",
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: ref("LoginCommand") } },
+        },
+        responses: {
+          "204": {
+            description: "The password matched. The cookie is the session.",
+            headers: { "x-correlation-id": CORRELATION_ID },
+          },
+          ...errorResponses([
+            "INVALID_REQUEST",
+            "NOT_AUTHENTICATED",
+            "CSRF_REJECTED",
+            "TOO_MANY_REQUESTS",
+          ]),
+        },
+      },
+      delete: {
+        operationId: "endSession",
+        summary: "Sign out",
+        description:
+          "Clears the cookie. Answered the same way whether or not one was " +
+          "there to clear: there is no session store to consult, so there " +
+          "is nothing to disagree about.",
+        responses: {
+          "204": {
+            description: "The cookie is cleared, or was never set.",
+            headers: { "x-correlation-id": CORRELATION_ID },
+          },
+          ...errorResponses(["CSRF_REJECTED"]),
+        },
+      },
+    },
     "/api/v1/lights": {
       get: {
         operationId: "listLights",

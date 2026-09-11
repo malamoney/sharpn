@@ -9,10 +9,19 @@
  */
 import { createServer } from "node:http";
 
+import {
+  passwordCheckFrom,
+  readSessionSecret,
+  sessionsSignedWith,
+} from "./auth/index.js";
 import { settingsFrom } from "./config.js";
 import { connectToGateway } from "./gateway/index.js";
 import { consoleApi } from "./http/app.js";
-import { meterAtMost, MUTATIONS_PER_MINUTE } from "./http/meter.js";
+import {
+  LOGIN_ATTEMPTS_PER_MINUTE,
+  meterAtMost,
+  MUTATIONS_PER_MINUTE,
+} from "./http/meter.js";
 import { watchTheGateway } from "./readiness.js";
 
 /**
@@ -35,12 +44,9 @@ const server = createServer(
     readiness,
     version: settings.version,
     meter: meterAtMost(MUTATIONS_PER_MINUTE),
-    // Where the request came from, until there is a session to count against
-    // instead. `request.ip` is the browser's address because exactly one proxy
-    // is trusted in front of this process, and the proxy's own if that ever
-    // stops being true — which shares one budget between every browser rather
-    // than handing each an unlimited one.
-    sessionOf: (request) => request.ip ?? "unknown",
+    sessions: sessionsSignedWith(readSessionSecret(settings.auth.sessionSecretFile)),
+    passwords: passwordCheckFrom(settings.auth.passwordHashFile),
+    loginMeter: meterAtMost(LOGIN_ATTEMPTS_PER_MINUTE),
   }),
 );
 

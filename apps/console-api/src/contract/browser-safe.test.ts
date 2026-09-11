@@ -33,6 +33,7 @@ describe("every module in the contract", () => {
       "errors.ts",
       "index.ts",
       "light.ts",
+      "login.ts",
       "openapi.ts",
     ]);
   });

@@ -21,6 +21,15 @@
 /** The ceiling on Mutations, per session, per window. */
 export const MUTATIONS_PER_MINUTE = 60;
 
+/**
+ * The ceiling on login attempts, per address, per window.
+ *
+ * Keyed by address rather than by session: a login attempt has no session
+ * yet, and the whole point of this ceiling is to bound how fast one browser
+ * can guess a password before it has one.
+ */
+export const LOGIN_ATTEMPTS_PER_MINUTE = 5;
+
 /** How far back the meter looks. */
 export const WINDOW_MS = 60_000;
 
