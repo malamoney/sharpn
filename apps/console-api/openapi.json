@@ -6,6 +6,130 @@
     "description": "What the Console may ask of the Console API. Generated from the Zod schemas in `apps/console-api/src/contract`; edit those, not this."
   },
   "paths": {
+    "/api/v1/session": {
+      "post": {
+        "operationId": "createSession",
+        "summary": "Sign in",
+        "description": "The one password, checked against the argon2id hash this service was deployed with. A success carries no body — the session is the cookie this sets, `HttpOnly`, `Secure`, `SameSite=Strict`, and there is no account to describe.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The password matched. The cookie is the session.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            }
+          },
+          "400": {
+            "description": "`INVALID_REQUEST` — The request body is not a Command the Console API can send: a key it does not know, a number out of range, a `null`, or nothing to change.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`NOT_AUTHENTICATED` — No session, or one that has expired. Sign in again.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`CSRF_REJECTED` — A mutation arrived without the CSRF token its session expects.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`TOO_MANY_REQUESTS` — This browser is going too fast. Reads are not metered.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              },
+              "Retry-After": {
+                "description": "How long to wait before asking again, in seconds. Sent only with the codes on this status that can be waited out; several codes share a status, and most of them cannot.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "endSession",
+        "summary": "Sign out",
+        "description": "Clears the cookie. Answered the same way whether or not one was there to clear: there is no session store to consult, so there is nothing to disagree about.",
+        "responses": {
+          "204": {
+            "description": "The cookie is cleared, or was never set.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            }
+          },
+          "403": {
+            "description": "`CSRF_REJECTED` — A mutation arrived without the CSRF token its session expects.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/lights": {
       "get": {
         "operationId": "listLights",
@@ -732,6 +856,20 @@
           "correlationId"
         ],
         "description": "What an update did, which is never what a Light now is. It names the Resources the Bridge says it changed and what it refused, and it has nowhere to carry state — read the Light to find out what it became."
+      },
+      "LoginCommand": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "additionalProperties": false,
+        "description": "The one password, and nothing else: there is no account to name alongside it."
       },
       "ErrorEnvelope": {
         "type": "object",

@@ -22,6 +22,10 @@ describe("the settings", () => {
         certificateFile: "/run/secrets/gateway-certificate",
         tokenFile: "/run/secrets/gateway-token",
       },
+      auth: {
+        passwordHashFile: "/run/secrets/password-hash",
+        sessionSecretFile: "/run/secrets/session-secret",
+      },
       version: { sha: "unknown", proto: "unknown" },
     });
   });
@@ -33,12 +37,18 @@ describe("the settings", () => {
         PORT: "8080",
         GATEWAY_CERTIFICATE_FILE: "/tmp/cert.pem",
         GATEWAY_TOKEN_FILE: "/tmp/token",
+        PASSWORD_HASH_FILE: "/tmp/password-hash",
+        SESSION_SECRET_FILE: "/tmp/session-secret",
       }),
     ).toMatchObject({
       port: 8080,
       gateway: {
         certificateFile: "/tmp/cert.pem",
         tokenFile: "/tmp/token",
+      },
+      auth: {
+        passwordHashFile: "/tmp/password-hash",
+        sessionSecretFile: "/tmp/session-secret",
       },
     });
   });

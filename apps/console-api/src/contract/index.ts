@@ -11,6 +11,7 @@ export * from "./acknowledgement.js";
 export * from "./command.js";
 export * from "./errors.js";
 export * from "./light.js";
+export * from "./login.js";
 
 // `openapi.ts` is deliberately not re-exported. It is how the document is
 // built, not something a route or a browser has any use for, and importing it

@@ -23,6 +23,13 @@ import { refuseWithoutAsking } from "./answer.js";
 import { healthRoutes, type HealthRouteParts } from "./health.js";
 import { lightRoutes, type LightRouteParts } from "./lights.js";
 import type { Meter } from "./meter.js";
+import {
+  loginRateLimit,
+  requireSession,
+  sessionIdOf,
+  sessionRoutes,
+  type SessionParts,
+} from "./session.js";
 
 /**
  * How much of a request body is read before it is refused.
@@ -40,38 +47,30 @@ export const BODY_LIMIT = "8kb";
  *
  * Reads are deliberately unmetered. Every Invalidation carries an id and
  * nothing else, so every one of them costs a read (ADR 0002) — a limit on
- * reads is a limit on the Console keeping up with a house.
+ * reads is a limit on the Console keeping up with a house. The same set is
+ * what the CSRF guard skips: an Origin can be forged and a `GET` cannot be
+ * made to do anything a browser navigating there would not do anyway.
  */
 const CHANGES_NOTHING = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** What the edge in front of the routes needs. */
 export interface EdgeParts {
-  /** Consulted before a Mutation is read, and never before a read. */
+  /** Consulted before a Mutation to a Light is read, and never before a read. */
   meter: Meter;
-  /**
-   * What a Mutation is counted against.
-   *
-   * A seam, because the thing it should be — the signed cookie's session — is
-   * not built yet. Until it is, a request is counted against where it came
-   * from: the browser's address when exactly one proxy is in front of this
-   * process, and the proxy's own otherwise, which shares one budget between
-   * every browser rather than handing each an unlimited one.
-   */
-  sessionOf(request: Request): string;
 }
 
 /** Everything the app is built out of. */
 export interface ConsoleApiParts
-  extends EdgeParts, LightRouteParts, HealthRouteParts {}
+  extends EdgeParts, LightRouteParts, HealthRouteParts, SessionParts {}
 
 export function consoleApi(parts: ConsoleApiParts): Express {
   const app = express();
 
   // Exactly one proxy, which is the Nginx in front of this process. It decides
-  // what `request.ip` is, and `request.ip` is what a Mutation is counted
-  // against until there is a session to count it against. Trusting one hop is
-  // only sound because nothing else can reach this process: it is published to
-  // a container network and never to the host.
+  // what `request.ip` is, which is read below to meter a login attempt before
+  // there is a session to read anything else off. Trusting one hop is only
+  // sound because nothing else can reach this process: it is published to a
+  // container network and never to the host.
   app.set("trust proxy", 1);
   // The signature a browser can read off a response, which says nothing about
   // what is answering. It is off by default in Express 5 but not in 4, and
@@ -83,14 +82,29 @@ export function consoleApi(parts: ConsoleApiParts): Express {
   // Light changed would be told nothing changed.
   app.disable("etag");
 
-  // Before the body is read, not after. A session sending malformed or
-  // oversized bodies as fast as it can is exactly what the meter is for, and
-  // one that only counted the requests that parsed would be a limit on being
-  // well behaved.
-  app.use(meterMutations(parts));
+  // CSRF's Origin check, for every mutation this service serves — including
+  // signing in, which has no cookie yet for `SameSite=Strict` to be strict
+  // about. Before the body is read, same as the meters below: a request this
+  // rejects should never have its body parsed on its account.
+  app.use(csrfGuard);
+
+  // Lights sit behind a session; `/session` is how one is started, and
+  // `/healthz`, `/readyz` and `/version` are answered to whoever is running
+  // this process, not to a signed-in browser. Mounted before the body is
+  // read, like the meter it sits in front of: an unauthenticated request
+  // should not have its body parsed on this service's account either.
+  app.use("/api/v1/lights", requireSession(parts));
+  app.use("/api/v1/lights", meterMutations(parts));
+  // Same reasoning, for a login attempt: it has to be counted before Express
+  // tries to parse its body, or a body it cannot parse never reaches the
+  // route whose job that counting was — and the guess it never counted was
+  // free.
+  app.use("/api/v1/session", loginRateLimit(parts));
+
   app.use(express.json({ limit: BODY_LIMIT }));
 
   app.use(healthRoutes(parts));
+  app.use("/api/v1", sessionRoutes(parts));
   app.use("/api/v1", lightRoutes(parts));
 
   app.use(unservedPath);
@@ -99,15 +113,87 @@ export function consoleApi(parts: ConsoleApiParts): Express {
   return app;
 }
 
+/**
+ * The Origin check half of CSRF.
+ *
+ * `SameSite=Strict` (`http/session.ts`) already keeps the session cookie off
+ * a cross-site request in a browser that honours it; this is what covers a
+ * login, which carries no cookie to be strict about, and what does not
+ * depend on the browser at all. There is no double-submit token: with one
+ * shared password and no session store, a token would be one more thing
+ * derived from the same cookie it is meant to be independent of.
+ *
+ * Compared by host alone, not the full origin: the scheme half of `Origin`
+ * would have to be read off `request.protocol`, which only reports `https`
+ * if Nginx forwards `X-Forwarded-Proto` — a header this service cannot make
+ * Nginx send. Guessing the scheme wrong would not let a forged request
+ * through, because an attacker's Origin never carries this host at all; it
+ * would only lock out every real browser the moment the guess disagreed with
+ * how it was actually served. The host is what an attacker's origin cannot
+ * forge, and it is also the one part of this a misconfigured proxy cannot
+ * get wrong, since it is `request.headers.host` verbatim.
+ */
+function csrfGuard(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+): void {
+  if (CHANGES_NOTHING.has(request.method)) {
+    next();
+    return;
+  }
+
+  const origin = request.get("origin");
+  const originHost = origin === undefined ? undefined : hostOf(origin);
+  const expectedHost = request.headers.host;
+
+  if (originHost === undefined || originHost !== expectedHost) {
+    refuseWithoutAsking(response, {
+      code: "CSRF_REJECTED",
+      detail:
+        origin === undefined
+          ? "that change carried no Origin header"
+          : `that change came from ${origin}, not this service's own host`,
+    });
+    return;
+  }
+
+  next();
+}
+
+/** An `Origin` header's host, or `undefined` if it is not a URL at all. */
+function hostOf(origin: string): string | undefined {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Counts anything that is not a read, and refuses past the minute's worth. */
-function meterMutations({ meter, sessionOf }: EdgeParts): RequestHandler {
+function meterMutations({ meter }: EdgeParts): RequestHandler {
   return (request, response, next) => {
     if (CHANGES_NOTHING.has(request.method)) {
       next();
       return;
     }
 
-    const spend = meter.spend(sessionOf(request));
+    // `requireSession` is mounted ahead of this on every path that reaches
+    // it, so a session id is always here to read. Thrown rather than
+    // defaulted: a route reorganisation that broke that ordering would
+    // otherwise merge every session's budget into one shared bucket keyed
+    // `"unknown"`, silently — no test would fail, and every browser in the
+    // house would share one limit. This turns that mistake into a 500 the
+    // moment it is made instead.
+    const sessionId = sessionIdOf(request);
+    if (sessionId === undefined) {
+      throw new Error(
+        "meterMutations reached a request requireSession did not " +
+          "authenticate; check the mount order in app.ts",
+      );
+    }
+
+    const spend = meter.spend(sessionId);
     if (spend.allowed) {
       next();
       return;

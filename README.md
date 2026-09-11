@@ -26,6 +26,9 @@ Browser ──HTTPS: REST and SSE──▶ Nginx ──▶ Console API ──gRP
 apps/console                     The Console. Vite, React, TypeScript.
 apps/console-api                 The Console API, and the bindings generated
                                  from the Gateway's contract.
+apps/console-api/src/auth        The password check and the signed session
+                                 cookie. No user identity and no session
+                                 store: one password, one secret, one cookie.
 apps/console-api/src/contract    The browser-facing contract: the schemas both
                                  tiers agree about.
 apps/console-api/src/gateway     The gRPC adapter: the only thing that talks to
@@ -70,9 +73,26 @@ npm run proto:generate
 certificate was issued for — and refuses to start without it, because a Console
 API that starts not knowing where the Gateway is answers every request with a
 502 and looks from the outside like a Gateway that is down. `PORT`,
-`GATEWAY_CERTIFICATE_FILE` and `GATEWAY_TOKEN_FILE` have defaults that match
-where compose mounts a secret; `GIT_SHA` and `PROTO_REVISION` are what
-`/version` reports, and say `unknown` on a build that was not stamped.
+`GATEWAY_CERTIFICATE_FILE`, `GATEWAY_TOKEN_FILE`, `PASSWORD_HASH_FILE` and
+`SESSION_SECRET_FILE` have defaults that match where compose mounts a secret;
+`GIT_SHA` and `PROTO_REVISION` are what `/version` reports, and say `unknown`
+on a build that was not stamped.
+
+`PASSWORD_HASH_FILE` holds an argon2id hash, not the password itself, and
+`SESSION_SECRET_FILE` holds the key session cookies are signed with — both
+read once at startup, for the reason the Gateway Token is (`config.ts`). A
+hash for the shared password is produced with the same library the service
+verifies against:
+
+```
+node -e 'require("@node-rs/argon2").hash(process.argv[1]).then(console.log)' \
+  'the household password' > password-hash
+```
+
+Rotating either file — a new password, or a fresh signing secret — signs
+every browser in the house out at once; see [ADR
+0006](./docs/adr/0006-stateless-signed-session-no-revocation.md) for why that
+is the only grain a shared password has.
 
 The browser-facing contract is defined once, as Zod schemas in
 `apps/console-api/src/contract`, and `openapi.json` is generated from them by
@@ -122,6 +142,14 @@ whether a Bridge can be reached. The edge mints every Correlation ID rather
 than believing one, reads 8KB of a body and no more, and meters Mutations at
 sixty a minute while leaving reads unmetered.
 
-Nothing reaches a browser yet: there is no sign-in, no event stream, and the
-Console still shows no Lights. The vocabulary is written down and the five
-decisions that would otherwise read as arbitrary are recorded.
+A browser can sign in now, too. One shared password, checked against an
+argon2id hash, opens a session that is a signed cookie and nothing this
+process remembers — `HttpOnly`, `Secure`, `SameSite=Strict`, sliding thirty
+days from whichever request was last authenticated. Every Light route sits
+behind it, a mutation is refused if its Origin does not match this service's
+own, and a login attempt is rate limited by address before a password is even
+checked.
+
+The Console still shows no Lights and there is no event stream yet. The
+vocabulary is written down and the six decisions that would otherwise read as
+arbitrary are recorded.
