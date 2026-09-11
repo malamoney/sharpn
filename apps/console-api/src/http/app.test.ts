@@ -22,7 +22,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { sessionsSignedWith } from "../auth/session.js";
+import { SESSION_DURATION_MS, sessionsSignedWith } from "../auth/session.js";
 import {
   errorEnvelopeSchema,
   type Acknowledgement,
@@ -31,8 +31,10 @@ import {
   type Light,
   type LightCommand,
 } from "../contract/index.js";
-import type { Gateway, GatewayResult, Subscriber } from "../gateway/index.js";
+import type { Fanout, FanoutListener } from "../events/fanout.js";
+import type { Gateway, GatewayResult, Notice, Subscriber } from "../gateway/index.js";
 import { consoleApi, type ConsoleApiParts } from "./app.js";
+import { openStreams, type EventRouteTiming } from "./events.js";
 import { LOGIN_ATTEMPTS_PER_MINUTE, meterAtMost, MUTATIONS_PER_MINUTE } from "./meter.js";
 
 const CORRELATION_ID = "11111111-2222-3333-4444-555555555555";
@@ -116,6 +118,40 @@ function aGateway(answers: Partial<Gateway> = {}): StandIn {
   };
 }
 
+/** A Fanout whose subscription state and Notices a test drives directly. */
+interface FanoutStandIn extends Fanout {
+  /** Delivers a Notice to every currently registered listener. */
+  notify(notice: Notice): void;
+  /** Changes what `subscribed()` answers from here on. */
+  setSubscribed(value: boolean): void;
+  /** How many listeners are currently registered. */
+  listeners(): number;
+}
+
+function aFanout(subscribed = true): FanoutStandIn {
+  const listeners = new Set<FanoutListener>();
+  let isSubscribed = subscribed;
+
+  return {
+    listen(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    channelConnected: () => true,
+    subscribed: () => isSubscribed,
+    stop: () => undefined,
+    notify(notice) {
+      for (const listener of listeners) {
+        listener.onNotice(notice);
+      }
+    },
+    setSubscribed(value) {
+      isSubscribed = value;
+    },
+    listeners: () => listeners.size,
+  };
+}
+
 /** A clock that starts at a round number and only moves when told to. */
 function clock(): { now: () => number; advance: (ms: number) => void } {
   let at = 1_000_000;
@@ -138,17 +174,25 @@ afterEach(() => {
 });
 
 /** The app on a port the operating system picked, and where to reach it. */
-async function serving(parts: Partial<ConsoleApiParts> = {}): Promise<string> {
-  const app = consoleApi({
-    gateway: aGateway(),
-    readiness: { channelConnected: () => true, subscribed: () => true },
-    version: { sha: "0000000", proto: "e3bef6b" },
-    meter: meterAtMost(MUTATIONS_PER_MINUTE),
-    sessions: sessionsSignedWith(TEST_SESSION_SECRET),
-    passwords: { matches: async (candidate) => candidate === TEST_PASSWORD },
-    loginMeter: meterAtMost(LOGIN_ATTEMPTS_PER_MINUTE),
-    ...parts,
-  });
+async function serving(
+  parts: Partial<ConsoleApiParts> = {},
+  eventTiming?: EventRouteTiming,
+): Promise<string> {
+  const app = consoleApi(
+    {
+      gateway: aGateway(),
+      readiness: { channelConnected: () => true, subscribed: () => true },
+      fanout: aFanout(),
+      streams: openStreams(),
+      version: { sha: "0000000", proto: "e3bef6b" },
+      meter: meterAtMost(MUTATIONS_PER_MINUTE),
+      sessions: sessionsSignedWith(TEST_SESSION_SECRET),
+      passwords: { matches: async (candidate) => candidate === TEST_PASSWORD },
+      loginMeter: meterAtMost(LOGIN_ATTEMPTS_PER_MINUTE),
+      ...parts,
+    },
+    eventTiming,
+  );
 
   const server = createServer(app);
   running.push(server);
@@ -241,10 +285,114 @@ async function signedIn(at: string): Promise<string> {
 /** A server, already signed in, and the cookie that proves it. */
 async function servingSignedIn(
   parts: Partial<ConsoleApiParts> = {},
+  eventTiming?: EventRouteTiming,
 ): Promise<{ at: string; cookie: string }> {
-  const at = await serving(parts);
+  const at = await serving(parts, eventTiming);
   const cookie = await signedIn(at);
   return { at, cookie };
+}
+
+/** One `event:`/`data:` frame off the wire, or `heartbeat` for a `:` comment. */
+interface Frame {
+  event: string;
+  data: unknown;
+}
+
+/**
+ * A live SSE response, read frame by frame.
+ *
+ * One reader for the whole connection rather than one per read: a
+ * `ReadableStream` refuses a second `getReader()` call while the first is
+ * still locked, and releasing it between reads would need the same buffered,
+ * not-yet-framed bytes carried across calls anyway. `close` is what a test
+ * calls once it is done asking, which is what lets the next request reuse
+ * the stream cleanly and what `afterEach` does not otherwise do for it.
+ */
+function frameReaderFor(response: Response): {
+  read(count: number, timeoutMs?: number): Promise<Frame[]>;
+  close(): Promise<void>;
+} {
+  const body = response.body;
+  if (body === null) {
+    throw new Error("the response carried no body to stream frames from");
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  return {
+    async read(count, timeoutMs = 2_000) {
+      const frames: Frame[] = [];
+      const deadline = Date.now() + timeoutMs;
+
+      while (frames.length < count) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          throw new Error(
+            `timed out waiting for ${count} frames; got ${frames.length}`,
+          );
+        }
+
+        // Raced rather than merely checked between reads: a single
+        // `reader.read()` that never resolves — a stream that stalls with no
+        // more chunks and no close — would otherwise hang this forever
+        // instead of failing with the message above.
+        const timedOut = Symbol("timed out");
+        const outcome = await Promise.race([
+          reader.read(),
+          new Promise<typeof timedOut>((resolve) =>
+            setTimeout(() => resolve(timedOut), remaining),
+          ),
+        ]);
+
+        if (outcome === timedOut) {
+          throw new Error(
+            `timed out waiting for ${count} frames; got ${frames.length}`,
+          );
+        }
+
+        const { value, done } = outcome;
+        if (done) {
+          throw new Error(
+            `the stream ended after ${frames.length} of ${count} frames`,
+          );
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        let boundary: number;
+        while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+          const raw = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          frames.push(parseFrame(raw));
+        }
+      }
+
+      return frames;
+    },
+
+    async close() {
+      await reader.cancel();
+    },
+  };
+}
+
+function parseFrame(raw: string): Frame {
+  if (raw.startsWith(":")) {
+    return { event: "heartbeat", data: undefined };
+  }
+
+  let event = "message";
+  let data: unknown;
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("event: ")) {
+      event = line.slice("event: ".length);
+    } else if (line.startsWith("data: ")) {
+      data = JSON.parse(line.slice("data: ".length));
+    }
+  }
+
+  return { event, data };
 }
 
 describe("reading the Lights", () => {
@@ -1024,5 +1172,266 @@ describe("a path nothing serves", () => {
     expect(await response.json()).toMatchObject({
       error: { code: "INVALID_REQUEST" },
     });
+  });
+});
+
+describe("the event stream", () => {
+  it("requires a session, like every other Light route", async () => {
+    const at = await serving();
+
+    const response = await fetch(`${at}/api/v1/events`);
+
+    expect(response.status).toBe(401);
+    expect(await envelopeOf(response)).toMatchObject({
+      error: { code: "NOT_AUTHENTICATED" },
+    });
+  });
+
+  it("reports the connection the moment it opens", async () => {
+    const { at, cookie } = await servingSignedIn();
+
+    const response = await fetch(`${at}/api/v1/events`, { headers: { cookie } });
+    const frames = frameReaderFor(response);
+    const [first] = await frames.read(1);
+
+    expect(response.headers.get("content-type")).toMatch(/text\/event-stream/);
+    expect(first).toEqual({
+      event: "connection",
+      data: { gateway: "connected", resyncing: false },
+    });
+
+    await frames.close();
+  });
+
+  it("coalesces repeated Invalidations for one Light into its latest kind", async () => {
+    const fanout = aFanout();
+    const { at, cookie } = await servingSignedIn({ fanout });
+
+    const response = await fetch(`${at}/api/v1/events`, { headers: { cookie } });
+    const frames = frameReaderFor(response);
+    await frames.read(1); // the opening connection frame
+
+    fanout.notify({
+      kind: "invalidation",
+      change: "changed",
+      resource: { rid: "kitchen-1", rtype: "light" },
+    });
+    fanout.notify({
+      kind: "invalidation",
+      change: "removed",
+      resource: { rid: "kitchen-1", rtype: "light" },
+    });
+
+    const [frame] = await frames.read(1);
+
+    expect(frame).toEqual({ event: "light.removed", data: { id: "kitchen-1" } });
+
+    await frames.close();
+  });
+
+  it("reports distinct Lights separately, each under its own kind", async () => {
+    const fanout = aFanout();
+    const { at, cookie } = await servingSignedIn({ fanout });
+
+    const response = await fetch(`${at}/api/v1/events`, { headers: { cookie } });
+    const frames = frameReaderFor(response);
+    await frames.read(1);
+
+    fanout.notify({
+      kind: "invalidation",
+      change: "added",
+      resource: { rid: "hallway-1", rtype: "light" },
+    });
+    fanout.notify({
+      kind: "invalidation",
+      change: "changed",
+      resource: { rid: "kitchen-1", rtype: "light" },
+    });
+
+    const seen = await frames.read(2);
+
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        { event: "light.added", data: { id: "hallway-1" } },
+        { event: "light.changed", data: { id: "kitchen-1" } },
+      ]),
+    );
+
+    await frames.close();
+  });
+
+  it("says nothing about a change to a Resource that is not a Light", async () => {
+    const fanout = aFanout();
+    const { at, cookie } = await servingSignedIn({ fanout });
+
+    const response = await fetch(`${at}/api/v1/events`, { headers: { cookie } });
+    const frames = frameReaderFor(response);
+    await frames.read(1);
+
+    fanout.notify({
+      kind: "invalidation",
+      change: "changed",
+      resource: { rid: "some-scene", rtype: "grouped_light" },
+    });
+    // A real one, so there is something to wait for: proves the dropped
+    // notice above was not merely slow to arrive.
+    fanout.notify({
+      kind: "invalidation",
+      change: "changed",
+      resource: { rid: "kitchen-1", rtype: "light" },
+    });
+
+    const seen = await frames.read(1);
+
+    expect(seen).toEqual([{ event: "light.changed", data: { id: "kitchen-1" } }]);
+
+    await frames.close();
+  });
+
+  it("does not treat a reconnect Gap as an Invalidation, only a pulse of resyncing", async () => {
+    const fanout = aFanout();
+    const { at, cookie } = await servingSignedIn({ fanout });
+
+    const response = await fetch(`${at}/api/v1/events`, { headers: { cookie } });
+    const frames = frameReaderFor(response);
+    await frames.read(1);
+
+    fanout.notify({ kind: "gap", cause: "reconnected", missed: 0 });
+
+    const [pulse] = await frames.read(1);
+    expect(pulse).toEqual({
+      event: "connection",
+      data: { gateway: "connected", resyncing: true },
+    });
+
+    const [settled] = await frames.read(1);
+    expect(settled).toEqual({
+      event: "connection",
+      data: { gateway: "connected", resyncing: false },
+    });
+
+    await frames.close();
+  });
+
+  it("pulses resyncing for a subscriber-behind Gap too, not just a reconnect", async () => {
+    // The alarm this Gap deserves is logged once, in `events/fanout.ts`,
+    // regardless of how many browsers are listening — see
+    // `fanout.test.ts`. What is this route's own job is forwarding it as
+    // the same pulse a reconnect gets.
+    const fanout = aFanout();
+    const { at, cookie } = await servingSignedIn({ fanout });
+
+    const response = await fetch(`${at}/api/v1/events`, { headers: { cookie } });
+    const frames = frameReaderFor(response);
+    await frames.read(1);
+
+    fanout.notify({ kind: "gap", cause: "subscriber_behind", missed: 256 });
+
+    const [pulse] = await frames.read(1);
+    expect(pulse).toEqual({
+      event: "connection",
+      data: { gateway: "connected", resyncing: true },
+    });
+
+    await frames.close();
+  });
+
+  it("reports the Gateway as reconnecting once the shared subscription drops", async () => {
+    const fanout = aFanout();
+    const { at, cookie } = await servingSignedIn({ fanout });
+
+    const response = await fetch(`${at}/api/v1/events`, { headers: { cookie } });
+    const frames = frameReaderFor(response);
+    await frames.read(1);
+
+    fanout.setSubscribed(false);
+    const [lost] = await frames.read(1);
+    expect(lost).toEqual({
+      event: "connection",
+      data: { gateway: "reconnecting", resyncing: false },
+    });
+
+    fanout.setSubscribed(true);
+    const [restored] = await frames.read(1);
+    expect(restored).toEqual({
+      event: "connection",
+      data: { gateway: "connected", resyncing: false },
+    });
+
+    await frames.close();
+  });
+
+  it("writes a heartbeat on schedule, so a proxy does not call this idle", async () => {
+    const { at, cookie } = await servingSignedIn(
+      {},
+      { flushIntervalMs: 5, heartbeatIntervalMs: 10 },
+    );
+
+    const response = await fetch(`${at}/api/v1/events`, { headers: { cookie } });
+    const frames = frameReaderFor(response);
+    const seen = await frames.read(2);
+
+    expect(seen[1]).toEqual({ event: "heartbeat", data: undefined });
+
+    await frames.close();
+  });
+
+  it("closes the stream once the session it opened under has expired", async () => {
+    const time = clock();
+    const { at, cookie } = await servingSignedIn(
+      { sessions: sessionsSignedWith(TEST_SESSION_SECRET, time.now) },
+      { flushIntervalMs: 5, heartbeatIntervalMs: 5 },
+    );
+
+    const response = await fetch(`${at}/api/v1/events`, { headers: { cookie } });
+    const frames = frameReaderFor(response);
+    await frames.read(1);
+
+    time.advance(SESSION_DURATION_MS + 1);
+
+    // Nothing more is ever going to arrive, so `read` either times out
+    // waiting or observes the stream end first; only the latter is this
+    // route doing what #5 asks of it.
+    await expect(frames.read(1, 2_000)).rejects.toThrow(/stream ended/);
+  });
+
+  it("stops listening on the shared subscription once the browser disconnects", async () => {
+    const fanout = aFanout();
+    const { at, cookie } = await servingSignedIn({ fanout });
+
+    const controller = new AbortController();
+    const response = await fetch(`${at}/api/v1/events`, {
+      headers: { cookie },
+      signal: controller.signal,
+    });
+    const frames = frameReaderFor(response);
+    await frames.read(1);
+
+    expect(fanout.listeners()).toBe(1);
+
+    controller.abort();
+
+    const deadline = Date.now() + 2_000;
+    while (fanout.listeners() > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    expect(fanout.listeners()).toBe(0);
+  });
+
+  it("closes when the process's own registry ends every open stream", async () => {
+    // What `server.ts` calls on shutdown: nothing about an open SSE
+    // connection ends it on its own, and a graceful `server.close()` would
+    // otherwise wait on a browser that never disconnects.
+    const streams = openStreams();
+    const { at, cookie } = await servingSignedIn({ streams });
+
+    const response = await fetch(`${at}/api/v1/events`, { headers: { cookie } });
+    const frames = frameReaderFor(response);
+    await frames.read(1);
+
+    streams.closeAll();
+
+    await expect(frames.read(1, 2_000)).rejects.toThrow(/stream ended/);
   });
 });

@@ -1003,6 +1003,33 @@ describe("subscribing to what the Bridge is doing", () => {
     expect(watching.ending()).toBeUndefined();
   });
 
+  it("tells the Subscriber once the Gateway has accepted the call", async () => {
+    // The fan-out uses this to know a reconnect succeeded, distinct from the
+    // stream merely having been asked for: a Gateway that was never
+    // reachable ends the stream without ever sending this.
+    answers = {
+      subscribe: (call) => {
+        call.write(aChange(Event_Type.TYPE_UPDATE, "kitchen-1"));
+      },
+    };
+
+    let opened = 0;
+    const subscription = connect().subscribe({
+      onNotice: () => undefined,
+      onOpened: () => {
+        opened += 1;
+      },
+      onEnded: () => undefined,
+    });
+
+    for (let waited = 0; waited < 2_000 && opened === 0; waited += 5) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    expect(opened).toBe(1);
+    subscription.cancel();
+  });
+
   it("asks for Lights, with credentials and no deadline", async () => {
     // The Gateway's DeadlineInterceptor exempts streaming RPCs deliberately,
     // and a deadline set here would be fighting that: a subscription is meant
