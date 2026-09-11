@@ -1,0 +1,6 @@
+# The vendored contract, as one buf module. `lint` and `breaking` are not
+# configured: these files are generated and reviewed upstream, and a lint rule
+# here could only ever disagree with the repository that owns them.
+version: v2
+modules:
+  - path: proto

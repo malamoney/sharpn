@@ -1,0 +1,7 @@
+# Committed, but written by protoc-gen-ts_proto. Collapsed in diffs so that a
+# review shows the flags and the .proto files that produced them, which are
+# the parts a person can be wrong about.
+apps/console-api/src/gen/** linguist-generated=true
+
+# Vendored from malamoney/hue. Reviewed there.
+proto/hue/v1/*.proto linguist-vendored=true

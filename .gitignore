@@ -1,2 +1,10 @@
 # Editor state, not project configuration.
 .vscode/
+
+# Installed from package-lock.json, which is committed.
+node_modules/
+
+# Build output. The generated protobuf bindings are *not* here: they are
+# committed, so that no image build needs protoc. See buf.gen.yaml.
+dist/
+*.tsbuildinfo
