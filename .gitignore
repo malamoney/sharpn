@@ -8,3 +8,8 @@ node_modules/
 # committed, so that no image build needs protoc. See buf.gen.yaml.
 dist/
 *.tsbuildinfo
+
+# Where scripts/generate-openapi.sh compiles to. Inside the repository because
+# the compiled code has to be able to resolve node_modules/, and removed again
+# when the script exits.
+.openapi.*

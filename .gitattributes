@@ -5,3 +5,8 @@ apps/console-api/src/gen/** linguist-generated=true
 
 # Vendored from malamoney/hue. Reviewed there.
 proto/hue/v1/*.proto linguist-vendored=true
+
+# Committed, but written by scripts/generate-openapi.sh from the Zod schemas in
+# apps/console-api/src/contract. Collapsed in diffs so that a review shows the
+# schemas that produced it, which are the part a person can be wrong about.
+apps/console-api/openapi.json linguist-generated=true

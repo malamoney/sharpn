@@ -23,11 +23,17 @@ Browser ──HTTPS: REST and SSE──▶ Nginx ──▶ Console API ──gRP
 ## Layout
 
 ```
-apps/console        The Console. Vite, React, TypeScript.
-apps/console-api    The Console API, and the bindings generated from the contract.
-proto/hue/v1        The Gateway's contract, vendored. Not edited here.
-proto/PINNED        The revision it is vendored from.
-docs/adr            The decisions that are hard to reverse.
+apps/console                     The Console. Vite, React, TypeScript.
+apps/console-api                 The Console API, and the bindings generated
+                                 from the Gateway's contract.
+apps/console-api/src/contract    The browser-facing contract: the schemas both
+                                 tiers agree about.
+apps/console-api/openapi.json    Those schemas as an OpenAPI document.
+                                 Generated. Not edited.
+proto/hue/v1                     The Gateway's contract, vendored. Not edited
+                                 here.
+proto/PINNED                     The revision it is vendored from.
+docs/adr                         The decisions that are hard to reverse.
 ```
 
 ## Working on it
@@ -50,6 +56,14 @@ npm run proto:vendor
 npm run proto:generate
 ```
 
+The browser-facing contract is defined once, as Zod schemas in
+`apps/console-api/src/contract`, and `openapi.json` is generated from them by
+`npm run openapi:generate`. Editing that document by hand is the failure mode
+worth knowing about, and it is not caught by a linter: a test renders the
+schemas and compares, so a document that has been edited — or one that was left
+behind when a schema changed — fails `npm test` and names the command that
+fixes it.
+
 `ts-proto` runs with `oneof=unions`, which is load-bearing rather than a
 preference — see [ADR 0005](./docs/adr/0005-colour-exclusivity-guarded-twice.md).
 Note that `proto:generate:check` cannot guard it: change the flag, regenerate,
@@ -60,6 +74,11 @@ the shapes it produces going missing.
 ## Status
 
 The skeleton is built: two workspaces, the Gateway's contract vendored at the
-revision `proto/PINNED` names, and typed bindings generated from it. Nothing talks to a Gateway yet, and the Console shows no Lights. The
-vocabulary is written down and the five decisions that would otherwise read as
-arbitrary are recorded.
+revision `proto/PINNED` names, and typed bindings generated from it. The
+browser-facing contract is defined too — the Light a browser sees, the Command
+it sends, the Acknowledgement it gets back, and the one error envelope every
+failure arrives in — along with the OpenAPI document generated from it.
+
+Nothing talks to a Gateway yet, no route is served, and the Console shows no
+Lights. The vocabulary is written down and the five decisions that would
+otherwise read as arbitrary are recorded.
