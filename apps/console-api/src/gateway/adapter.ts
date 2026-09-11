@@ -72,6 +72,17 @@ export interface Subscriber {
   /** A Light's copy may be stale, or events may have been missed. */
   onNotice(notice: Notice): void;
   /**
+   * The Gateway has accepted the `Subscribe` call and is sending on it.
+   *
+   * Optional, and read by the event fan-out alone: everything else here
+   * cares only about what arrives and how the stream ends, and a Subscriber
+   * that does not implement this is not asked to. It fires on the stream's
+   * initial metadata, which a Gateway that was never reachable — the case
+   * `onEnded` can see arrive before `subscribe` has even returned — never
+   * sends.
+   */
+  onOpened?(): void;
+  /**
    * The stream ended, once. Cleanly when it was cancelled or the Gateway shut
    * down, and otherwise with the code the Gateway's status translates to.
    */
@@ -235,6 +246,9 @@ export function connectToGateway(config: GatewayConfig): Gateway {
 
       listening.add(stop);
 
+      stream.on("metadata", () => {
+        subscriber.onOpened?.();
+      });
       stream.on("data", (event: HueEvent) => {
         const notice = noticeFrom(event);
         if (notice !== undefined) {

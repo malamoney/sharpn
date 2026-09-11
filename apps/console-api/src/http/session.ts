@@ -46,6 +46,18 @@ export function sessionIdOf(request: Request): string | undefined {
 }
 
 /**
+ * The session cookie's raw value, read off a request's `Cookie` header.
+ *
+ * `requireSession` reads this once, to verify. `http/events.ts` reads it
+ * again, on a timer, because a Server-Sent Events connection makes no second
+ * request for a sliding expiry to renew on — session expiry is otherwise
+ * invisible to a stream that is already open.
+ */
+export function sessionCookieOf(request: Request): string | undefined {
+  return cookieNamed(SESSION_COOKIE_NAME, request.headers.cookie);
+}
+
+/**
  * The gate `app.ts` mounts on `/api/v1/session` ahead of `express.json()`.
  *
  * A login attempt has to be counted before its body is read, not inside the
@@ -133,7 +145,7 @@ export function sessionRoutes({ sessions, passwords }: SessionParts): Router {
  */
 export function requireSession({ sessions }: Pick<SessionParts, "sessions">): RequestHandler {
   return (request: Request, response: Response, next: NextFunction) => {
-    const cookie = cookieNamed(SESSION_COOKIE_NAME, request.headers.cookie);
+    const cookie = sessionCookieOf(request);
     const session = cookie === undefined ? undefined : sessions.verify(cookie);
 
     if (session === undefined) {

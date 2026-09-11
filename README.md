@@ -31,6 +31,9 @@ apps/console-api/src/auth        The password check and the signed session
                                  store: one password, one secret, one cookie.
 apps/console-api/src/contract    The browser-facing contract: the schemas both
                                  tiers agree about.
+apps/console-api/src/events      The one `Subscribe` this process holds,
+                                 reopened on a bounded backoff, fanned out to
+                                 however many browsers are listening.
 apps/console-api/src/gateway     The gRPC adapter: the only thing that talks to
                                  the Gateway, and the only place protobuf is
                                  named.
@@ -150,6 +153,17 @@ behind it, a mutation is refused if its Origin does not match this service's
 own, and a login attempt is rate limited by address before a password is even
 checked.
 
-The Console still shows no Lights and there is no event stream yet. The
-vocabulary is written down and the six decisions that would otherwise read as
-arbitrary are recorded.
+There is an event stream now, too. One `Subscribe` per process, reopened on a
+bounded, jittered backoff whenever it ends, fanned out to however many
+browsers are listening as Server-Sent Events: `light.changed`, `light.added`
+and `light.removed`, each carrying an id and nothing else (ADR 0002), plus a
+`connection` status and a heartbeat. A browser's own buffer is a `Map` of
+dirty ids flushed every fifty milliseconds rather than a queue, because two
+Invalidations for the same Light are the same Invalidation; a Gap the Gateway
+announces on its own reconnect is forwarded as connection status rather than
+treated as one, and a Gap that means this process fell behind the Gateway is
+logged as the bug it is. `/readyz` and the event stream now share the one
+subscription rather than each holding their own.
+
+The Console still shows no Lights. The vocabulary is written down and the six
+decisions that would otherwise read as arbitrary are recorded.

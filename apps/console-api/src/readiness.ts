@@ -1,6 +1,5 @@
 /**
- * What `/readyz` is allowed to assert, and the one subscription that keeps it
- * true.
+ * What `/readyz` is allowed to assert.
  *
  * Two facts, and deliberately not a third. A Bridge that cannot be reached is
  * a 503 on a route; it is not a reason to take this process out of service,
@@ -12,10 +11,16 @@
  * shutdown, so an unpaired Gateway with no Bridge at all reports healthy —
  * which makes it a fine liveness probe for the Gateway and no evidence
  * whatsoever about this process.
+ *
+ * `events/fanout.ts`'s `Fanout` is what keeps these true: it holds the one
+ * `Subscribe` this process makes, which is also what a browser's Server-Sent
+ * Events are fanned out from — one subscription, not one held for `/readyz`
+ * and a second held for events. One consequence rides along with that
+ * sharing: `/readyz` now recovers on the fanout's own backoff, which climbs
+ * toward thirty seconds under a sustained outage, rather than the flat
+ * one-second reopen a dedicated watch could afford. A slower `/readyz` after
+ * a long outage is the trade a single subscription makes, not an oversight.
  */
-import type { Gateway, Subscription } from "./gateway/index.js";
-
-/** The two facts `/readyz` reports. */
 export interface Readiness {
   /**
    * Whether the one channel to the Gateway is connected at this moment.
@@ -29,78 +34,4 @@ export interface Readiness {
   channelConnected(): boolean;
   /** Whether a `Subscribe` is open and has not ended. */
   subscribed(): boolean;
-}
-
-/** A readiness that is being kept up to date, until it is stopped. */
-export interface Watch extends Readiness {
-  /** Stops watching, and ends the subscription it was holding. */
-  stop(): void;
-}
-
-/**
- * How long after a subscription ends before another is opened.
- *
- * A flat wait, and knowingly the simplest thing that is not a hot loop: this
- * subscription exists to give `/readyz` something true to say, and the one
- * that carries events to browsers — with bounded exponential backoff and
- * jitter, and a Gap to account for — is the event fan-out's, which replaces
- * this.
- */
-export const REOPEN_AFTER_MS = 1_000;
-
-/**
- * Holds one subscription open, and reports what it and the channel are doing.
- *
- * The Notices are dropped. Nothing in this tier has anywhere to put an
- * Invalidation yet, and holding a subscription for the sole fact that it is
- * held is still worth doing: a stream that the Gateway ends is the difference
- * between a process that can serve events and one that has a working channel
- * and nothing listening on it.
- */
-export function watchTheGateway(
-  gateway: Gateway,
-  reopenAfterMs: number = REOPEN_AFTER_MS,
-): Watch {
-  let open = false;
-  let stopped = false;
-  let listening: Subscription | undefined;
-  let reopening: NodeJS.Timeout | undefined;
-
-  const start = () => {
-    // Set before the call rather than after it, because a subscription to a
-    // Gateway that is not there can end inside `subscribe` — and assigning
-    // `true` after that has happened would leave this claiming a stream that
-    // is already over.
-    open = true;
-    listening = gateway.subscribe({
-      onNotice: () => undefined,
-      onEnded: () => {
-        open = false;
-        if (stopped) {
-          return;
-        }
-
-        // Unreferenced, so that a process with nothing else to do can still
-        // exit: this timer is housekeeping, not work anybody is waiting for.
-        reopening = setTimeout(start, reopenAfterMs);
-        reopening.unref();
-      },
-    });
-  };
-
-  start();
-
-  return {
-    channelConnected: () => gateway.isChannelReady(),
-    subscribed: () => open,
-    stop() {
-      stopped = true;
-      clearTimeout(reopening);
-      listening?.cancel();
-      // Cancelling ends the stream, but the Gateway's agreement arrives on a
-      // later turn, and a probe answered in between should not be told there
-      // is a subscription that is being torn down.
-      open = false;
-    },
-  };
 }

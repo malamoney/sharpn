@@ -20,6 +20,11 @@ import express, {
 
 import { mintCorrelationId } from "../gateway/index.js";
 import { refuseWithoutAsking } from "./answer.js";
+import {
+  eventRoutes,
+  type EventRouteParts,
+  type EventRouteTiming,
+} from "./events.js";
 import { healthRoutes, type HealthRouteParts } from "./health.js";
 import { lightRoutes, type LightRouteParts } from "./lights.js";
 import type { Meter } from "./meter.js";
@@ -61,9 +66,21 @@ export interface EdgeParts {
 
 /** Everything the app is built out of. */
 export interface ConsoleApiParts
-  extends EdgeParts, LightRouteParts, HealthRouteParts, SessionParts {}
+  extends EdgeParts,
+    LightRouteParts,
+    HealthRouteParts,
+    SessionParts,
+    EventRouteParts {}
 
-export function consoleApi(parts: ConsoleApiParts): Express {
+export function consoleApi(
+  parts: ConsoleApiParts,
+  /**
+   * How fast the event stream's own timers run. A parameter for the reason
+   * `meter.ts`'s clock is one: a test that waited a real fifteen seconds for
+   * a heartbeat is a test nobody runs.
+   */
+  eventTiming?: EventRouteTiming,
+): Express {
   const app = express();
 
   // Exactly one proxy, which is the Nginx in front of this process. It decides
@@ -95,6 +112,11 @@ export function consoleApi(parts: ConsoleApiParts): Express {
   // should not have its body parsed on this service's account either.
   app.use("/api/v1/lights", requireSession(parts));
   app.use("/api/v1/lights", meterMutations(parts));
+  // Server-Sent Events, same gate as the Lights they invalidate — mounted
+  // ahead of the body reader too, on the same reasoning: a browser this has
+  // not authenticated gets nothing parsed on this service's account either,
+  // and this route reads no body regardless.
+  app.use("/api/v1/events", requireSession(parts));
   // Same reasoning, for a login attempt: it has to be counted before Express
   // tries to parse its body, or a body it cannot parse never reaches the
   // route whose job that counting was — and the guess it never counted was
@@ -106,6 +128,7 @@ export function consoleApi(parts: ConsoleApiParts): Express {
   app.use(healthRoutes(parts));
   app.use("/api/v1", sessionRoutes(parts));
   app.use("/api/v1", lightRoutes(parts));
+  app.use("/api/v1", eventRoutes(parts, eventTiming));
 
   app.use(unservedPath);
   app.use(bodyThatCouldNotBeRead);
