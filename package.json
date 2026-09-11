@@ -1,0 +1,35 @@
+{
+  "name": "sharpn",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A web application for managing Philips Hue lights, backed by the hue-grpc Gateway.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "apps/console",
+    "apps/console-api"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "proto:vendor": "scripts/vendor-protos.sh",
+    "proto:vendor:check": "scripts/check-vendored-protos.sh",
+    "proto:generate": "buf generate",
+    "proto:generate:check": "scripts/check-generated-bindings.sh",
+    "proto:flags:check": "scripts/check-codegen-flags.sh"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.72.0",
+    "ts-proto": "^2.12.3",
+    "typescript": "^5.9.3"
+  },
+  "allowScripts": {
+    "@bufbuild/buf@1.72.0": true,
+    "protobufjs@7.6.6": true,
+    "fsevents@2.3.3": true
+  }
+}

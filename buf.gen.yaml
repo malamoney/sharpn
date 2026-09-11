@@ -1,0 +1,28 @@
+# Generation runs on a dev machine and the output is committed, so no image
+# build needs protoc. CI regenerates and diffs — see
+# scripts/check-generated-bindings.sh.
+version: v2
+
+# Delete the output directory first, so a message removed upstream leaves no
+# orphaned file behind for the diff to call unchanged.
+clean: true
+
+plugins:
+  - local: protoc-gen-ts_proto
+    out: apps/console-api/src/gen
+    opt:
+      # Load-bearing, not a style preference. ts-proto's default
+      # (oneof=properties) emits LightPut.color and LightPut.colorTemperature
+      # as two flat optional fields, and a message carrying both is not an
+      # error — the oneof silently keeps whichever was written last. unions
+      # emits a discriminated union instead, so the invalid state does not
+      # typecheck. See docs/adr/0005-colour-exclusivity-guarded-twice.md; the
+      # assertion that this flag is still in force lives in
+      # apps/console-api/src/gen.test.ts.
+      - oneof=unions
+      # Typed clients for the Console API's one consumer.
+      - outputServices=grpc-js
+      - esModuleInterop=true
+      # The Console API is ESM under NodeNext resolution, where a relative
+      # import needs its extension.
+      - importSuffix=.js

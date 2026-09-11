@@ -1,0 +1,10 @@
+# The revision of the Gateway that proto/hue/v1 is vendored from.
+#
+# These .proto files are copies. Do not edit them here: change them upstream,
+# move `revision` to the commit that carries the change, and run
+# `npm run proto:vendor`. CI re-fetches this revision and diffs, so an edit
+# made here and nowhere else fails the build rather than drifting quietly.
+
+repo=malamoney/hue
+revision=e3bef6b14545b08cc14ad57b9fb7a75a5a060332
+path=proto/hue/v1

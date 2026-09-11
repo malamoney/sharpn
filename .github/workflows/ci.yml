@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Two copies of the Gateway's contract exist in this repository: the
+      # vendored .proto files and the TypeScript generated from them. Both are
+      # committed, so both can be edited, and neither has anything but these
+      # steps to notice.
+      - name: The vendored protos are the pinned revision
+        run: npm run proto:vendor:check
+
+      # Before the diff, not after: regenerating with a changed flag produces
+      # output that matches the changed flag, so the step below would call a
+      # reverted `oneof=unions` a clean tree.
+      - name: The codegen flags the bindings depend on are still asked for
+        run: npm run proto:flags:check
+
+      - name: The committed bindings are what the protos generate
+        run: npm run proto:generate:check
+
+      # Typecheck before build: the assertion that `oneof=unions` is still in
+      # force is a compile error in a test file, which the build does not
+      # compile. See docs/adr/0005-colour-exclusivity-guarded-twice.md.
+      - run: npm run typecheck
+
+      - run: npm run build
+
+      - run: npm test
