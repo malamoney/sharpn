@@ -31,6 +31,12 @@ apps/console-api/src/contract    The browser-facing contract: the schemas both
 apps/console-api/src/gateway     The gRPC adapter: the only thing that talks to
                                  the Gateway, and the only place protobuf is
                                  named.
+apps/console-api/src/http        The routes, and everything a request passes
+                                 through on the way to one: the body limit, the
+                                 Mutation meter, and the envelope every failure
+                                 leaves in.
+apps/console-api/src/server.ts   The process. Reads its settings, opens the one
+                                 channel, holds one subscription, and listens.
 apps/console-api/openapi.json    Those schemas as an OpenAPI document.
                                  Generated. Not edited.
 proto/hue/v1                     The Gateway's contract, vendored. Not edited
@@ -58,6 +64,15 @@ then run both halves:
 npm run proto:vendor
 npm run proto:generate
 ```
+
+`npm start -w @sharpn/console-api` runs the built Console API. It needs
+`GATEWAY_TARGET` — `host:port`, where the host is the name the Gateway's
+certificate was issued for — and refuses to start without it, because a Console
+API that starts not knowing where the Gateway is answers every request with a
+502 and looks from the outside like a Gateway that is down. `PORT`,
+`GATEWAY_CERTIFICATE_FILE` and `GATEWAY_TOKEN_FILE` have defaults that match
+where compose mounts a secret; `GIT_SHA` and `PROTO_REVISION` are what
+`/version` reports, and say `unknown` on a build that was not stamped.
 
 The browser-facing contract is defined once, as Zod schemas in
 `apps/console-api/src/contract`, and `openapi.json` is generated from them by
@@ -96,6 +111,17 @@ translates every status in the table into the code a browser is answered with.
 It reads Lights, sends Commands, answers with Acknowledgements and listens for
 changes — and it hands the tiers above it no protobuf at all.
 
-No route is served, nothing reaches a browser, and the Console shows no Lights.
-The vocabulary is written down and the five decisions that would otherwise read
-as arbitrary are recorded.
+Lights are served, too. The contract's three routes answer in the shapes the
+document describes: a read goes straight through to the Bridge, an update
+answers with an Acknowledgement and never with a Light, an update that ran out
+of time is reported as an Outcome nobody knows rather than as a failure, and a
+Command carrying both a colour and a colour temperature is refused before a
+message is built. `/healthz`, `/readyz` and `/version` answer whoever is
+running it — `/readyz` on the channel and the subscription only, and never on
+whether a Bridge can be reached. The edge mints every Correlation ID rather
+than believing one, reads 8KB of a body and no more, and meters Mutations at
+sixty a minute while leaving reads unmetered.
+
+Nothing reaches a browser yet: there is no sign-in, no event stream, and the
+Console still shows no Lights. The vocabulary is written down and the five
+decisions that would otherwise read as arbitrary are recorded.

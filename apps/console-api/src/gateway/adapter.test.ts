@@ -1103,4 +1103,43 @@ describe("subscribing to what the Bridge is doing", () => {
 
     expect(watching.ending()).toMatchObject({ ok: true });
   });
+
+  it("ends a subscription to a Gateway that is not there", async () => {
+    // What `/readyz` leans on: a Subscribe is made locally and succeeds
+    // whatever is on the other end, so an open call is not evidence of a
+    // Gateway. The stream ending shortly afterwards is what says so.
+    const watching = watch(connect({ target: "localhost:1" }));
+    await watching.until(() => watching.ending() !== undefined);
+
+    expect(watching.ending()).toMatchObject({
+      ok: false,
+      code: "GATEWAY_UNREACHABLE",
+    });
+  });
+});
+
+describe("whether the channel is up", () => {
+  it("is true once something has been asked over it", async () => {
+    answers = {
+      listLights: (_call, callback) => callback(null, { lights: [] }),
+    };
+
+    const gateway = connect();
+
+    // A channel is lazy: before the first call there is no connection to have
+    // a state, and a probe that dialled to find out would be changing what it
+    // measures.
+    expect(gateway.isChannelReady()).toBe(false);
+
+    await gateway.listLights();
+
+    expect(gateway.isChannelReady()).toBe(true);
+  });
+
+  it("is false when there is nothing on the other end", async () => {
+    const gateway = connect({ target: "localhost:1" });
+    await gateway.listLights();
+
+    expect(gateway.isChannelReady()).toBe(false);
+  });
 });
