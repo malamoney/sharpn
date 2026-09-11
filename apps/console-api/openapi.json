@@ -1,0 +1,796 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "sharpn Console API",
+    "version": "1.0.0",
+    "description": "What the Console may ask of the Console API. Generated from the Zod schemas in `apps/console-api/src/contract`; edit those, not this."
+  },
+  "paths": {
+    "/api/v1/lights": {
+      "get": {
+        "operationId": "listLights",
+        "summary": "Every Light the Bridge knows about",
+        "description": "Read straight through to the Bridge. Nothing is cached here, so this is what the Bridge said a moment ago and not what the Console API remembers.",
+        "responses": {
+          "200": {
+            "description": "Every Light, in whatever order the Bridge listed it.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Light"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`NOT_AUTHENTICATED` — No session, or one that has expired. Sign in again.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`GATEWAY_MISCONFIGURED` — The Gateway rejected the Console API's Gateway Token. A deployment fault, and deliberately not a 401: the browser has no credential to fix.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "`BRIDGE_UNSUPPORTED` — The Bridge does not serve this at all — older firmware, or a model that cannot do it. Asking again will not change that.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`GATEWAY_ERROR` — The Gateway failed in a way nothing here anticipated.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`GATEWAY_NOT_PAIRED` — The Gateway is not paired with a Bridge, or its Application Key has been revoked and pairing has to be done again. Somebody has to walk to the Bridge; `detail` carries the Gateway's own instructions.\n\n`BRIDGE_UNREACHABLE` — The Gateway could not reach the Bridge.\n\n`BRIDGE_BUSY` — The Bridge is rate limiting the Gateway. Deliberately not a 429: a 429 from the Console API only ever means the browser is going too fast.\n\n`GATEWAY_UNREACHABLE` — This API could not reach the Gateway at all — the channel is down, or its certificate did not verify.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              },
+              "Retry-After": {
+                "description": "How long to wait before asking again, in seconds. Sent only with the codes on this status that can be waited out; several codes share a status, and most of them cannot.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "`BRIDGE_TIMEOUT` — A read took too long. The Gateway had already retried it, and nothing was changed by asking.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lights/{id}": {
+      "get": {
+        "operationId": "getLight",
+        "summary": "One Light",
+        "description": "The Light as the Bridge reports it now. This is the only way to learn what a Light became: an update never answers with one.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The Light's id, as the Bridge reports it.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Light.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Light"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`NOT_AUTHENTICATED` — No session, or one that has expired. Sign in again.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`LIGHT_NOT_FOUND` — The Bridge knows no Light with that id.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`GATEWAY_MISCONFIGURED` — The Gateway rejected the Console API's Gateway Token. A deployment fault, and deliberately not a 401: the browser has no credential to fix.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "`BRIDGE_UNSUPPORTED` — The Bridge does not serve this at all — older firmware, or a model that cannot do it. Asking again will not change that.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`GATEWAY_ERROR` — The Gateway failed in a way nothing here anticipated.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`GATEWAY_NOT_PAIRED` — The Gateway is not paired with a Bridge, or its Application Key has been revoked and pairing has to be done again. Somebody has to walk to the Bridge; `detail` carries the Gateway's own instructions.\n\n`BRIDGE_UNREACHABLE` — The Gateway could not reach the Bridge.\n\n`BRIDGE_BUSY` — The Bridge is rate limiting the Gateway. Deliberately not a 429: a 429 from the Console API only ever means the browser is going too fast.\n\n`GATEWAY_UNREACHABLE` — This API could not reach the Gateway at all — the channel is down, or its certificate did not verify.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              },
+              "Retry-After": {
+                "description": "How long to wait before asking again, in seconds. Sent only with the codes on this status that can be waited out; several codes share a status, and most of them cannot.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "`BRIDGE_TIMEOUT` — A read took too long. The Gateway had already retried it, and nothing was changed by asking.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateLight",
+        "summary": "Change one Light",
+        "description": "Answers with an Acknowledgement and never with a Light. A 200 means the exchange completed, which is not the same as the Bridge having done what was asked: it can report a change it made and a refusal about the same request, and `outcome` is how to tell `success` from `partial` and `rejected`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The Light's id, as the Bridge reports it.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LightCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the Bridge says the Command came to. An `outcome` of `rejected` arrives here rather than as a 4xx: the request was well formed and the Bridge answered it.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Acknowledgement"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`INVALID_REQUEST` — The request body is not a Command the Console API can send: a key it does not know, a number out of range, a `null`, or nothing to change.\n\n`COLOR_AND_TEMPERATURE_BOTH_SET` — One command asked for both a colour and a colour temperature. They are a protobuf oneof on the wire, where setting both silently keeps one, so the request is refused rather than half-applied.\n\n`BRIDGE_REJECTED_COMMAND` — The Bridge or the Gateway refused the command, and nothing changed. `detail` says which value it objected to.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`NOT_AUTHENTICATED` — No session, or one that has expired. Sign in again.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`CSRF_REJECTED` — A mutation arrived without the CSRF token its session expects.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`LIGHT_NOT_FOUND` — The Bridge knows no Light with that id.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`TOO_MANY_REQUESTS` — This browser is going too fast. Reads are not metered.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              },
+              "Retry-After": {
+                "description": "How long to wait before asking again, in seconds. Sent only with the codes on this status that can be waited out; several codes share a status, and most of them cannot.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`GATEWAY_MISCONFIGURED` — The Gateway rejected the Console API's Gateway Token. A deployment fault, and deliberately not a 401: the browser has no credential to fix.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "`BRIDGE_UNSUPPORTED` — The Bridge does not serve this at all — older firmware, or a model that cannot do it. Asking again will not change that.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`GATEWAY_ERROR` — The Gateway failed in a way nothing here anticipated.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`GATEWAY_NOT_PAIRED` — The Gateway is not paired with a Bridge, or its Application Key has been revoked and pairing has to be done again. Somebody has to walk to the Bridge; `detail` carries the Gateway's own instructions.\n\n`BRIDGE_UNREACHABLE` — The Gateway could not reach the Bridge.\n\n`BRIDGE_BUSY` — The Bridge is rate limiting the Gateway. Deliberately not a 429: a 429 from the Console API only ever means the browser is going too fast.\n\n`GATEWAY_UNREACHABLE` — This API could not reach the Gateway at all — the channel is down, or its certificate did not verify.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              },
+              "Retry-After": {
+                "description": "How long to wait before asking again, in seconds. Sent only with the codes on this status that can be waited out; several codes share a status, and most of them cannot.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "`MUTATION_OUTCOME_UNKNOWN` — An update took too long, so the Command may have been applied and the reply lost. This is not a failure and must not be reported as one — read the Light to find out what it is now.",
+            "headers": {
+              "x-correlation-id": {
+                "$ref": "#/components/headers/x-correlation-id"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LightArchetype": {
+        "type": "string",
+        "enum": [
+          "unspecified",
+          "unknown_archetype",
+          "classic_bulb",
+          "sultan_bulb",
+          "flood_bulb",
+          "spot_bulb",
+          "candle_bulb",
+          "luster_bulb",
+          "pendant_round",
+          "pendant_long",
+          "ceiling_round",
+          "ceiling_square",
+          "floor_shade",
+          "floor_lantern",
+          "table_shade",
+          "recessed_ceiling",
+          "recessed_floor",
+          "single_spot",
+          "double_spot",
+          "table_wash",
+          "wall_lantern",
+          "wall_shade",
+          "flexible_lamp",
+          "ground_spot",
+          "wall_spot",
+          "plug",
+          "hue_go",
+          "hue_lightstrip",
+          "hue_iris",
+          "hue_bloom",
+          "bollard",
+          "wall_washer",
+          "hue_play",
+          "vintage_bulb",
+          "vintage_candle_bulb",
+          "ellipse_bulb",
+          "triangle_bulb",
+          "small_globe_bulb",
+          "large_globe_bulb",
+          "edison_bulb",
+          "christmas_tree",
+          "string_light",
+          "hue_centris",
+          "hue_lightstrip_tv",
+          "hue_lightstrip_pc",
+          "hue_tube",
+          "hue_signe",
+          "pendant_spot",
+          "ceiling_horizontal",
+          "ceiling_tube"
+        ],
+        "description": "What kind of fitting a Light is, spelled the way Hue spells it. `unspecified` is an archetype the Gateway did not recognise, and is not Hue's own `unknown_archetype`."
+      },
+      "ColorXy": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "description": "A CIE xy position, as the Bridge reported it."
+      },
+      "LightCapabilities": {
+        "type": "object",
+        "properties": {
+          "dimming": {
+            "type": "boolean"
+          },
+          "colorTemperature": {
+            "type": "boolean"
+          },
+          "color": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dimming",
+          "colorTemperature",
+          "color"
+        ],
+        "description": "What a Light can be told to do. Each flag is the presence of a field on the Bridge's own resource, so a light that cannot be coloured is not a light that is currently black. Read these rather than guessing from the values beside them: a dimmable light may report no brightness."
+      },
+      "Light": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "archetype": {
+            "$ref": "#/components/schemas/LightArchetype"
+          },
+          "on": {
+            "type": "boolean"
+          },
+          "brightness": {
+            "type": "number"
+          },
+          "colorTemperatureMirek": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "colorXy": {
+            "$ref": "#/components/schemas/ColorXy"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/LightCapabilities"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "archetype",
+          "on",
+          "capabilities"
+        ],
+        "description": "A Light, flat and renamed. The numbers here are whatever the Bridge reported and are not held to the ranges a Command is: a response describes what was seen, where a Command is checked before it is sent."
+      },
+      "LightCommand": {
+        "type": "object",
+        "properties": {
+          "on": {
+            "type": "boolean"
+          },
+          "brightness": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "colorTemperatureMirek": {
+            "type": "integer",
+            "minimum": 153,
+            "maximum": 500
+          },
+          "colorXy": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "What to change about a Light. Presence is the whole contract: a key this body does not carry never reaches the Bridge, and one it does carry is sent — `false` and `0` included. `null` is refused rather than read as absent, and a body that changes nothing is refused too. Ranges are the Bridge's own; nothing stricter is enforced here.",
+        "not": {
+          "required": [
+            "colorXy",
+            "colorTemperatureMirek"
+          ]
+        }
+      },
+      "ResourceIdentifier": {
+        "type": "object",
+        "properties": {
+          "rid": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rtype": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "rid",
+          "rtype"
+        ],
+        "description": "A Resource the Bridge named, in Hue's own words."
+      },
+      "BridgeError": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "description": "What the Bridge refused, in its own words, verbatim."
+      },
+      "Acknowledgement": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "success",
+              "partial",
+              "rejected",
+              "unknown"
+            ]
+          },
+          "updated": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceIdentifier"
+            }
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BridgeError"
+            }
+          },
+          "correlationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome",
+          "updated",
+          "errors",
+          "correlationId"
+        ],
+        "description": "What an update did, which is never what a Light now is. It names the Resources the Bridge says it changed and what it refused, and it has nowhere to carry state — read the Light to find out what it became."
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "BRIDGE_REJECTED_COMMAND",
+                  "LIGHT_NOT_FOUND",
+                  "GATEWAY_NOT_PAIRED",
+                  "BRIDGE_UNREACHABLE",
+                  "BRIDGE_TIMEOUT",
+                  "MUTATION_OUTCOME_UNKNOWN",
+                  "BRIDGE_BUSY",
+                  "BRIDGE_UNSUPPORTED",
+                  "GATEWAY_MISCONFIGURED",
+                  "GATEWAY_ERROR",
+                  "GATEWAY_UNREACHABLE",
+                  "NOT_AUTHENTICATED",
+                  "CSRF_REJECTED",
+                  "TOO_MANY_REQUESTS",
+                  "INVALID_REQUEST",
+                  "COLOR_AND_TEMPERATURE_BOTH_SET"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "correlationId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "correlationId"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "description": "Every error, in one shape. `message` is the Console API's own words. `detail` is whoever refused, verbatim — the Gateway's prose, the Bridge's own description, or its own account of what was wrong with the body."
+      }
+    },
+    "headers": {
+      "x-correlation-id": {
+        "description": "The Correlation ID this request was logged under. Minted here and never taken from the browser; the same value appears in every error envelope.",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
