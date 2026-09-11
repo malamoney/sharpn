@@ -8,6 +8,7 @@
  * `ServiceError`.
  */
 import {
+  connectivityState,
   Metadata,
   type CallOptions,
   type ServiceError,
@@ -110,6 +111,16 @@ export interface Gateway {
    * rather than the end of it.
    */
   subscribe(subscriber: Subscriber): Subscription;
+  /**
+   * Whether the one channel to the Gateway is connected at this moment.
+   *
+   * Asked rather than remembered: a connectivity state that was read a minute
+   * ago is a claim about a minute ago, and the thing that reads this — the
+   * readiness of the process — is answering a question about now. It never
+   * asks the channel to connect, because a health check that dials is a health
+   * check that changes what it measures.
+   */
+  isChannelReady(): boolean;
   /**
    * Closes the channel, ending every subscription still listening on it.
    *
@@ -244,6 +255,13 @@ export function connectToGateway(config: GatewayConfig): Gateway {
       });
 
       return { cancel: stop };
+    },
+
+    isChannelReady() {
+      return (
+        lighting.getChannel().getConnectivityState(false) ===
+        connectivityState.READY
+      );
     },
 
     close() {
