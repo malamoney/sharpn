@@ -1,24 +1,41 @@
 /**
- * What an Outcome is shown as, in words that hold up under ADR 0001.
+ * What an Outcome — or an update that never got an Acknowledgement at all —
+ * is shown as, in words that hold up under ADR 0001.
  *
  * `success` returns `undefined` on purpose: an Acknowledgement is evidence a
  * Command was accepted, never evidence of what a Light now is, so there is
  * nothing honest to say about the Light itself yet — the Pending Command
  * stays showing what was asked for until a fresh read confirms or corrects
- * it. `unknown` is deliberately never described as a failure: the reply was
- * lost, not the Command.
+ * it. `unknown` — and `MUTATION_OUTCOME_UNKNOWN`, which is the same fact
+ * arriving as a failed request rather than a successful one with an
+ * ambiguous body — is deliberately never described as a failure: the reply
+ * was lost, not the Command. `partial` shows `errors[].description`
+ * verbatim rather than a generic line: that string is the entire diagnostic
+ * the Bridge gave, and paraphrasing it away would destroy the only
+ * information there is.
  */
-import type { Outcome } from "../api/types.js";
+import type { ApiError } from "../api/apiError.js";
+import type { Acknowledgement } from "../api/types.js";
 
-export function messageForOutcome(outcome: Outcome): string | undefined {
-  switch (outcome) {
+export const COULD_NOT_CONFIRM_MESSAGE = "couldn't confirm — refreshed";
+
+export function messageForOutcome(acknowledgement: Acknowledgement): string | undefined {
+  switch (acknowledgement.outcome) {
     case "success":
       return undefined;
     case "partial":
-      return "Only some of that change went through.";
+      return acknowledgement.errors.map((error) => error.description).join(" ");
     case "rejected":
       return "The Bridge would not make that change.";
     case "unknown":
-      return "That took too long to answer for, so nobody knows yet whether it was made.";
+      return COULD_NOT_CONFIRM_MESSAGE;
   }
+}
+
+export function messageForError(error: ApiError): string {
+  if (error.code === "MUTATION_OUTCOME_UNKNOWN") {
+    return COULD_NOT_CONFIRM_MESSAGE;
+  }
+
+  return error.message;
 }
