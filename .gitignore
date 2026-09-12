@@ -13,3 +13,12 @@ dist/
 # the compiled code has to be able to resolve node_modules/, and removed again
 # when the script exits.
 .openapi.*
+
+# This Mac's own deploy: the compose secrets and the TLS material mkcert
+# writes, plus the `.env` they and the Gateway's address are read from. None
+# of it is fit to commit — see docs/deployment.md for what goes in each file.
+secrets/*
+!secrets/.gitkeep
+certs/*
+!certs/.gitkeep
+.env

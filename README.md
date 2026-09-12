@@ -49,7 +49,22 @@ proto/hue/v1                     The Gateway's contract, vendored. Not edited
                                  here.
 proto/PINNED                     The revision it is vendored from.
 docs/adr                         The decisions that are hard to reverse.
+docs/deployment.md               First-time setup on the Mac: secrets, TLS,
+                                 build and start.
+docs/runbooks                    What to do when a token or certificate needs
+                                 to change, or a deploy needs to be undone.
+docker-compose.yml               The two containers — `nginx` and
+                                 `console-api` — and the network, secrets and
+                                 volumes between them.
 ```
+
+## Deploying
+
+See [`docs/deployment.md`](./docs/deployment.md) for first-time setup on the
+Mac — secrets, TLS on both hops, and `scripts/deploy.sh` — and
+[`docs/runbooks/`](./docs/runbooks) for what to do afterward: rotating the
+Gateway Token or its certificate, recovering from a revoked Application Key,
+and rolling back.
 
 ## Working on it
 
@@ -88,8 +103,7 @@ hash for the shared password is produced with the same library the service
 verifies against:
 
 ```
-node -e 'require("@node-rs/argon2").hash(process.argv[1]).then(console.log)' \
-  'the household password' > password-hash
+npm run --workspace=apps/console-api hash-password -- 'the household password' > password-hash
 ```
 
 Rotating either file — a new password, or a fresh signing secret — signs

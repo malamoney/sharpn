@@ -1,0 +1,20 @@
+# Both images build from the repository root, because the npm workspace
+# needs every package.json to be there for `npm ci` to resolve it. Everything
+# below is either rebuilt inside the image or has no business in one.
+
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.git
+.github
+.vscode
+.claude
+
+# Secret material and TLS keys never belong in an image layer — they are
+# mounted at runtime instead (docker-compose.yml, docs/deployment.md).
+secrets
+certs
+.env
+
+docs
+*.md
