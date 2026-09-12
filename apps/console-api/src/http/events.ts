@@ -130,6 +130,11 @@ function openStream(
   response.setHeader("Content-Type", "text/event-stream");
   response.setHeader("Cache-Control", "no-cache, no-transform");
   response.setHeader("Connection", "keep-alive");
+  // Belt-and-braces alongside Nginx's own `proxy_buffering off` on this
+  // location: this header is what tells Nginx not to buffer this response
+  // even if that location block is ever misconfigured, so a stalled
+  // Invalidation reads as a proxy bug in one place rather than two.
+  response.setHeader("X-Accel-Buffering", "no");
   response.flushHeaders();
 
   // A browser that resets its connection between the heartbeat's read of

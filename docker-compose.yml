@@ -1,0 +1,81 @@
+# Two containers on the dev Mac, reaching the Gateway on its own host over
+# the LAN (ADR 0003). See docs/deployment.md for first-time setup — the
+# secrets and certificates this file mounts do not exist until something
+# puts them in `./secrets` and `./certs` — and docs/runbooks/ for what to do
+# when a token or certificate needs to change, or a deploy needs to be undone.
+#
+# `docker compose up --build`, after `.env` is filled in from `.env.example`.
+
+name: sharpn
+
+networks:
+  # Named explicitly, over the one Compose would make anyway, so that a
+  # `docker network ls` on this Mac says what it's for.
+  sharpn:
+    driver: bridge
+
+secrets:
+  # Each file becomes `/run/secrets/<name>` inside a container that lists it
+  # (config.ts's defaults are exactly these names) — Compose's own secret
+  # mechanism, not baked into any image layer. See docs/deployment.md for
+  # what goes in each file and docs/runbooks/ for rotating the ones that
+  # rotate.
+  gateway-certificate:
+    file: ./secrets/gateway-certificate
+  gateway-token:
+    file: ./secrets/gateway-token
+  password-hash:
+    file: ./secrets/password-hash
+  session-secret:
+    file: ./secrets/session-secret
+
+services:
+  console-api:
+    build:
+      context: .
+      dockerfile: apps/console-api/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        PROTO_REVISION: ${PROTO_REVISION:-unknown}
+    networks:
+      - sharpn
+    environment:
+      GATEWAY_TARGET: >-
+        ${GATEWAY_HOSTNAME:?set GATEWAY_HOSTNAME in .env — see .env.example}:${GATEWAY_PORT:-50051}
+    extra_hosts:
+      # The container's resolver has no mDNS, so the Gateway's LAN name is
+      # mapped to its IP by hand rather than relied on to resolve on its own
+      # (ADR 0004). Both halves come from `.env`, not hardcoded, because the
+      # Gateway's IP is specific to this Mac's LAN and changes if either
+      # machine gets a new one.
+      - "${GATEWAY_HOSTNAME:?set GATEWAY_HOSTNAME in .env — see .env.example}:${GATEWAY_HOST_IP:?set GATEWAY_HOST_IP in .env — see .env.example}"
+    secrets:
+      - gateway-certificate
+      - gateway-token
+      - password-hash
+      - session-secret
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: apps/console/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        PROTO_REVISION: ${PROTO_REVISION:-unknown}
+    networks:
+      - sharpn
+    ports:
+      # The only port either container publishes to the host — console-api
+      # is reachable from Nginx over the `sharpn` network alone.
+      - "80:80"
+      - "443:443"
+    volumes:
+      # mkcert's output, mounted rather than baked in: a certificate belongs
+      # to whichever Mac is running this compose file this week, not to an
+      # image (docs/deployment.md).
+      - ./certs:/etc/nginx/tls:ro
+    depends_on:
+      console-api:
+        condition: service_healthy
+    restart: unless-stopped

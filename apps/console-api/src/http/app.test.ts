@@ -1195,6 +1195,12 @@ describe("the event stream", () => {
     const [first] = await frames.read(1);
 
     expect(response.headers.get("content-type")).toMatch(/text\/event-stream/);
+    // Nginx buffers a proxied response by default, which would hold every
+    // frame below until its buffer filled rather than flushing them as they
+    // are written. This header turns that off for this response, so the
+    // Console sees each Invalidation without a proxy-shaped delay on top of
+    // it (docs/runbooks and the Nginx `proxy_buffering off` it pairs with).
+    expect(response.headers.get("x-accel-buffering")).toBe("no");
     expect(first).toEqual({
       event: "connection",
       data: { gateway: "connected", resyncing: false },
