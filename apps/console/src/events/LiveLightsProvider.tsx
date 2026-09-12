@@ -66,7 +66,7 @@ export function LiveLightsProvider({ children }: { children: ReactNode }) {
         setStatus({ kind: "connected", ...connection });
 
         if (previousGateway.current === "reconnecting" && connection.gateway === "connected") {
-          void queryClient.invalidateQueries({ queryKey: LIGHTS });
+          raceAwareInvalidate(queryClient, LIGHTS, { exact: false });
         }
         previousGateway.current = connection.gateway;
       },

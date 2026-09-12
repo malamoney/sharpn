@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { lightDetailKey, lightsListKey, LIGHTS } from "../queries/queryKeys.js";
+import { handlersPassedIn, openEventStreamMock } from "../test/eventStreamTestSupport.js";
 import * as eventStreamModule from "./eventStream.js";
 import { LiveLightsProvider, useLiveStatus } from "./LiveLightsProvider.js";
 
@@ -10,18 +11,6 @@ vi.mock("./eventStream.js", async () => {
   const actual = await vi.importActual<typeof eventStreamModule>("./eventStream.js");
   return { ...actual, openEventStream: vi.fn() };
 });
-
-function openEventStreamMock() {
-  return vi.mocked(eventStreamModule.openEventStream);
-}
-
-function handlersPassedIn(): eventStreamModule.EventStreamHandlers {
-  const [, handlers] = openEventStreamMock().mock.calls.at(-1) ?? [];
-  if (handlers === undefined) {
-    throw new Error("openEventStream was never called");
-  }
-  return handlers;
-}
 
 function renderProvider(queryClient: QueryClient) {
   openEventStreamMock().mockReturnValue({ close: vi.fn() });
@@ -91,7 +80,7 @@ describe("full-collection refetch", () => {
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     handlers.onConnectionStatus({ gateway: "connected", resyncing: false });
 
-    expect(spy).toHaveBeenCalledWith({ queryKey: LIGHTS });
+    expect(spy).toHaveBeenCalledWith({ queryKey: LIGHTS, exact: false });
   });
 
   it("does not refetch on the first connected status ever seen", () => {
@@ -102,7 +91,7 @@ describe("full-collection refetch", () => {
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     handlers.onConnectionStatus({ gateway: "connected", resyncing: false });
 
-    expect(spy).not.toHaveBeenCalledWith({ queryKey: LIGHTS });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: LIGHTS, exact: false });
   });
 
   it("does not refetch on a resyncing pulse alone (CAUSE_RECONNECTED, which the Gateway resyncs)", () => {
@@ -115,7 +104,7 @@ describe("full-collection refetch", () => {
     handlers.onConnectionStatus({ gateway: "connected", resyncing: true });
     handlers.onConnectionStatus({ gateway: "connected", resyncing: false });
 
-    expect(spy).not.toHaveBeenCalledWith({ queryKey: LIGHTS });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: LIGHTS, exact: false });
   });
 
   it("does not refetch merely because this browser's own stream reopened", () => {
@@ -128,7 +117,7 @@ describe("full-collection refetch", () => {
     handlers.onStreamDown();
     handlers.onStreamOpen(true);
 
-    expect(spy).not.toHaveBeenCalledWith({ queryKey: LIGHTS });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: LIGHTS, exact: false });
   });
 });
 

@@ -69,12 +69,13 @@ export function useUpdateLight(): UpdateLightResult {
   const { setPending, clearPending } = usePendingCommands();
   const queryClient = useQueryClient();
 
-  // In-flight and held state, per Light id. Local to this hook instance —
-  // each Light's controls hold their own `useUpdateLight()` — but keyed
-  // regardless, since nothing stops one instance being asked to send for
-  // more than one Light.
-  const inFlight = useRef(new Set<string>());
-  const held = useRef(new Map<string, LightCommand>());
+  // One Light in flight at a time: a key's presence means that Light has a
+  // PATCH outstanding, and its value is whatever is held to send once that
+  // PATCH settles — `undefined` until a second `send` arrives. Local to this
+  // hook instance — each Light's controls hold their own `useUpdateLight()`
+  // — but keyed regardless, since nothing stops one instance being asked to
+  // send for more than one Light.
+  const inFlight = useRef(new Map<string, LightCommand | undefined>());
 
   const mutation = useMutation({
     mutationFn: ({
@@ -89,20 +90,16 @@ export function useUpdateLight(): UpdateLightResult {
   const fireRef = useRef<(lightId: string, command: LightCommand) => void>(() => undefined);
 
   const settle = useCallback((lightId: string, justSent: LightCommand) => {
+    const next = inFlight.current.get(lightId);
     inFlight.current.delete(lightId);
-    const next = held.current.get(lightId);
-    if (next === undefined) {
-      return;
-    }
-    held.current.delete(lightId);
-    if (!commandsEqual(next, justSent)) {
+    if (next !== undefined && !commandsEqual(next, justSent)) {
       fireRef.current(lightId, next);
     }
   }, []);
 
   const fire = useCallback(
     (lightId: string, command: LightCommand) => {
-      inFlight.current.add(lightId);
+      inFlight.current.set(lightId, undefined);
       const sentAt = Date.now();
       setPending({ lightId, command, sentAt });
       mutation.mutate(
@@ -141,7 +138,7 @@ export function useUpdateLight(): UpdateLightResult {
   const send = useCallback(
     (lightId: string, command: LightCommand) => {
       if (inFlight.current.has(lightId)) {
-        held.current.set(lightId, command);
+        inFlight.current.set(lightId, command);
         return;
       }
       fire(lightId, command);

@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import * as eventStreamModule from "../events/eventStream.js";
+import { handlersPassedIn, openEventStreamMock } from "../test/eventStreamTestSupport.js";
 import { AuthenticatedLayout } from "./AuthenticatedLayout.js";
 
 vi.mock("../events/eventStream.js", async () => {
@@ -12,18 +13,6 @@ vi.mock("../events/eventStream.js", async () => {
 });
 
 vi.mock("../api/session.js", () => ({ logout: vi.fn() }));
-
-function openEventStreamMock() {
-  return vi.mocked(eventStreamModule.openEventStream);
-}
-
-function handlersPassedIn(): eventStreamModule.EventStreamHandlers {
-  const [, handlers] = openEventStreamMock().mock.calls.at(-1) ?? [];
-  if (handlers === undefined) {
-    throw new Error("openEventStream was never called");
-  }
-  return handlers;
-}
 
 function renderLayout() {
   openEventStreamMock().mockReturnValue({ close: vi.fn() });

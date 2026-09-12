@@ -7,30 +7,12 @@ import { ApiError } from "../api/apiError.js";
 import * as lightsApi from "../api/lights.js";
 import type { Acknowledgement } from "../api/types.js";
 import { PendingCommandsProvider, usePendingCommands } from "../pending/PendingCommandsProvider.js";
+import { anAcknowledgement } from "../test/acknowledgements.js";
+import { deferred } from "../test/deferred.js";
 import { lightDetailKey } from "./queryKeys.js";
 import { useUpdateLight } from "./useUpdateLight.js";
 
 vi.mock("../api/lights.js");
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
-function anAcknowledgement(overrides: Partial<Acknowledgement>): Acknowledgement {
-  return {
-    outcome: "success",
-    updated: [{ rid: "l1", rtype: "light" }],
-    errors: [],
-    correlationId: "corr-1",
-    ...overrides,
-  };
-}
 
 function setUp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

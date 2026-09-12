@@ -1,15 +1,8 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
+import { deferred } from "../test/deferred.js";
 import { raceAwareInvalidate } from "./raceAwareInvalidate.js";
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
 
 describe("invalidating a query that may be mid-fetch", () => {
   it("invalidates immediately when nothing is in flight", () => {
@@ -91,5 +84,51 @@ describe("invalidating a query that may be mid-fetch", () => {
     raceAwareInvalidate(queryClient, key);
 
     expect(spy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("invalidating a prefix (exact: false) covering more than one query", () => {
+  it("invalidates immediately when nothing under the prefix is fetching", () => {
+    const queryClient = new QueryClient();
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+
+    raceAwareInvalidate(queryClient, ["lights"], { exact: false });
+
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["lights"], exact: false });
+  });
+
+  it("waits for every currently-fetching match under the prefix to settle before invalidating", async () => {
+    const queryClient = new QueryClient();
+    const list = deferred<string>();
+    const detail = deferred<string>();
+
+    const listFetch = queryClient.fetchQuery({
+      queryKey: ["lights", "list"],
+      queryFn: () => list.promise,
+    });
+    const detailFetch = queryClient.fetchQuery({
+      queryKey: ["lights", "detail", "l1"],
+      queryFn: () => detail.promise,
+    });
+
+    const spy = vi.spyOn(queryClient, "invalidateQueries");
+    raceAwareInvalidate(queryClient, ["lights"], { exact: false });
+
+    expect(spy).not.toHaveBeenCalled();
+
+    list.resolve("list value");
+    await listFetch;
+
+    // One of the two matches settled, but the other — the detail read — may
+    // still have started before whatever triggered this and so is not
+    // enough on its own.
+    expect(spy).not.toHaveBeenCalled();
+
+    detail.resolve("detail value");
+    await detailFetch;
+
+    await vi.waitFor(() => {
+      expect(spy).toHaveBeenCalledWith({ queryKey: ["lights"], exact: false });
+    });
   });
 });

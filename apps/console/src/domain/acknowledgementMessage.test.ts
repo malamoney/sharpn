@@ -1,18 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "../api/apiError.js";
-import type { Acknowledgement } from "../api/types.js";
+import { anAcknowledgement } from "../test/acknowledgements.js";
 import { messageForError, messageForOutcome } from "./acknowledgementMessage.js";
-
-function anAcknowledgement(overrides: Partial<Acknowledgement>): Acknowledgement {
-  return {
-    outcome: "success",
-    updated: [],
-    errors: [],
-    correlationId: "corr-1",
-    ...overrides,
-  };
-}
 
 describe("what an Outcome is shown as", () => {
   it("says nothing at all about success — it is what a fresh read is for", () => {
