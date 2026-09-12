@@ -10,7 +10,8 @@
   },
   "workspaces": [
     "apps/console",
-    "apps/console-api"
+    "apps/console-api",
+    "apps/e2e"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",

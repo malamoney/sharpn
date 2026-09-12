@@ -12,7 +12,7 @@
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 
 import type { PasswordCheck } from "../auth/password.js";
-import { SESSION_DURATION_MS, type Sessions } from "../auth/session.js";
+import type { Sessions } from "../auth/session.js";
 import { readLoginCommand } from "../contract/index.js";
 import { mintCorrelationId } from "../gateway/index.js";
 import { CORRELATION_ID_HEADER, refuseWithoutAsking } from "./answer.js";
@@ -119,7 +119,7 @@ export function sessionRoutes({ sessions, passwords }: SessionParts): Router {
     }
 
     const { value } = sessions.mint();
-    setSessionCookie(response, value);
+    setSessionCookie(response, value, sessions.durationMs);
     response.setHeader(CORRELATION_ID_HEADER, mintCorrelationId());
     response.status(204).end();
   });
@@ -159,7 +159,7 @@ export function requireSession({ sessions }: Pick<SessionParts, "sessions">): Re
     verifiedSessionIds.set(request, session.id);
 
     const renewed = sessions.renew(session);
-    setSessionCookie(response, renewed.value);
+    setSessionCookie(response, renewed.value, sessions.durationMs);
     next();
   };
 }
@@ -170,12 +170,14 @@ export function requireSession({ sessions }: Pick<SessionParts, "sessions">): Re
  * request this page did not make — the whole of the CSRF story that is not
  * the Origin check in `app.ts`.
  *
- * `Max-Age` is always the same number of seconds: every mint and every renew
- * sets `expiresAt` to `now() + SESSION_DURATION_MS`, so there is no wall
- * clock to read here at all, and nothing to skew if this process's ever did.
+ * `Max-Age` is `durationMs` itself, read off `sessions.durationMs` rather
+ * than assumed to be `SESSION_DURATION_MS`'s default — `config.ts`'s
+ * environment override means the two can differ, and a browser told the
+ * wrong one would keep a cookie past when the server has already stopped
+ * honouring it, or throw one away while the server still would.
  */
-function setSessionCookie(response: Response, value: string): void {
-  const maxAgeSeconds = SESSION_DURATION_MS / 1000;
+function setSessionCookie(response: Response, value: string, durationMs: number): void {
+  const maxAgeSeconds = durationMs / 1000;
 
   response.setHeader(
     "Set-Cookie",

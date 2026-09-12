@@ -1,0 +1,17 @@
+{
+  "name": "@sharpn/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Issue #10's layers 2 and 3, both against docker-compose.e2e.yml: the real Gateway/fake Bridge round trip, and Playwright through the real Nginx.",
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test:gateway": "vitest run",
+    "test:playwright": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}

@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { SESSION_DURATION_MS } from "./auth/session.js";
 import { settingsFrom } from "./config.js";
 
 const ENOUGH = { GATEWAY_TARGET: "hue.local:50051" };
@@ -25,6 +26,7 @@ describe("the settings", () => {
       auth: {
         passwordHashFile: "/run/secrets/password-hash",
         sessionSecretFile: "/run/secrets/session-secret",
+        sessionDurationMs: SESSION_DURATION_MS,
       },
       version: { sha: "unknown", proto: "unknown" },
     });
@@ -75,5 +77,22 @@ describe("the settings", () => {
     );
     expect(() => settingsFrom({ ...ENOUGH, PORT: "0" })).toThrow(/PORT/);
     expect(() => settingsFrom({ ...ENOUGH, PORT: "70000" })).toThrow(/PORT/);
+  });
+
+  it("take a session duration from the environment, when told one", () => {
+    // The seam an e2e run uses to watch a real session actually expire,
+    // rather than waiting thirty days for it: auth/session.ts's durationMs.
+    expect(
+      settingsFrom({ ...ENOUGH, SESSION_DURATION_MS: "5000" }),
+    ).toMatchObject({ auth: { sessionDurationMs: 5_000 } });
+  });
+
+  it("refuse a session duration that is not one", () => {
+    expect(() =>
+      settingsFrom({ ...ENOUGH, SESSION_DURATION_MS: "soon" }),
+    ).toThrow(/SESSION_DURATION_MS/);
+    expect(() =>
+      settingsFrom({ ...ENOUGH, SESSION_DURATION_MS: "0" }),
+    ).toThrow(/SESSION_DURATION_MS/);
   });
 });

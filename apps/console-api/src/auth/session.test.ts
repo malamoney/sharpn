@@ -58,6 +58,30 @@ describe("a minted session", () => {
 
     expect(one.session.id).not.toBe(another.session.id);
   });
+
+  it("reports its own duration, for a cookie's Max-Age to be told rather than assume", () => {
+    // http/session.ts's setSessionCookie reads this rather than
+    // SESSION_DURATION_MS directly, so a browser is told the same duration
+    // the signed cookie actually enforces — including when it isn't the
+    // default, which config.ts's SESSION_DURATION_MS override lets it not be.
+    expect(sessionsSignedWith("a-secret", clock().now).durationMs).toBe(
+      SESSION_DURATION_MS,
+    );
+    expect(sessionsSignedWith("a-secret", clock().now, 5_000).durationMs).toBe(
+      5_000,
+    );
+  });
+
+  it("honours a duration given instead of the default", () => {
+    // The seam an e2e run sets short, so a session can be watched expiring in
+    // test time rather than thirty days: config.ts's SESSION_DURATION_MS.
+    const time = clock();
+    const sessions = sessionsSignedWith("a-secret", time.now, 5_000);
+
+    const { session } = sessions.mint();
+
+    expect(session.expiresAt).toBe(time.now() + 5_000);
+  });
 });
 
 describe("verifying a cookie", () => {
@@ -137,6 +161,17 @@ describe("renewing a session", () => {
 
     // The original would have expired by now; the renewal is why it has not.
     expect(sessions.verify(renewed.value)).toEqual(renewed.session);
+  });
+
+  it("slides forward by the same custom duration it was minted with", () => {
+    const time = clock();
+    const sessions = sessionsSignedWith("a-secret", time.now, 5_000);
+    const { session } = sessions.mint();
+
+    time.advance(2_000);
+    const renewed = sessions.renew(session);
+
+    expect(renewed.session.expiresAt).toBe(time.now() + 5_000);
   });
 });
 
