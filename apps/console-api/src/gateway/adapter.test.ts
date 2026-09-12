@@ -281,6 +281,70 @@ describe("reading the Lights", () => {
       ],
     });
   });
+
+  it("carries a bulb's own mirek range and gamut triangle, when the Bridge reports both fully", async () => {
+    answers = {
+      listLights: (_call, callback) =>
+        callback(null, {
+          lights: [
+            aLightGet({
+              dimming: { brightness: 62.5, minDimLevel: 0.1 },
+              colorTemperature: {
+                mirek: 366,
+                mirekValid: true,
+                mirekSchema: { mirekMinimum: 153, mirekMaximum: 454 },
+              },
+              color: {
+                xy: { x: 0.4578, y: 0.4101 },
+                gamut: {
+                  red: { x: 0.6915, y: 0.3083 },
+                  green: { x: 0.17, y: 0.7 },
+                  blue: { x: 0.1532, y: 0.0475 },
+                },
+              },
+            }),
+          ],
+        }),
+    };
+
+    const result = await connect().listLights();
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: [
+        {
+          minDimLevel: 0.1,
+          mirekSchema: { mirekMinimum: 153, mirekMaximum: 454 },
+          colorGamut: {
+            red: { x: 0.6915, y: 0.3083 },
+            green: { x: 0.17, y: 0.7 },
+            blue: { x: 0.1532, y: 0.0475 },
+          },
+        },
+      ],
+    });
+  });
+
+  it("leaves the gamut absent when the Bridge did not report every corner", async () => {
+    answers = {
+      listLights: (_call, callback) =>
+        callback(null, {
+          lights: [
+            aLightGet({
+              color: {
+                xy: { x: 0.4578, y: 0.4101 },
+                gamut: { red: { x: 0.6915, y: 0.3083 } },
+              },
+            }),
+          ],
+        }),
+    };
+
+    const result = await connect().listLights();
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value[0]?.colorGamut).toBeUndefined();
+  });
 });
 
 describe("what the Gateway is told about a call", () => {

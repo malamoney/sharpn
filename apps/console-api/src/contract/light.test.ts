@@ -47,17 +47,59 @@ describe("the Light resource", () => {
   it("exposes nothing else the Gateway reports", () => {
     // A field that is exposed is a field whose compatibility we own. Effects,
     // gradients, signalling, dynamics, powerup, geometry, mode, owner and
-    // service id are none of ours.
+    // service id are none of ours. `minDimLevel`, `mirekSchema` and
+    // `colorGamut` are: issue #7's controls read them to floor a brightness
+    // slider, bound a colour-temperature slider, and draw the triangle a bulb
+    // actually produces.
     expect(Object.keys(lightSchema.shape).sort()).toEqual([
       "archetype",
       "brightness",
       "capabilities",
+      "colorGamut",
       "colorTemperatureMirek",
       "colorXy",
       "id",
+      "minDimLevel",
+      "mirekSchema",
       "name",
       "on",
     ]);
+  });
+
+  it("carries the bulb's own mirek range, separately from Hue's outer bound", () => {
+    const withRange = {
+      ...plainBulb,
+      capabilities: { dimming: false, colorTemperature: true, color: false },
+      colorTemperatureMirek: 366,
+      mirekSchema: { mirekMinimum: 153, mirekMaximum: 454 },
+    };
+
+    expect(lightSchema.parse(withRange).mirekSchema).toEqual({
+      mirekMinimum: 153,
+      mirekMaximum: 454,
+    });
+  });
+
+  it("carries the triangle a colour bulb can actually produce", () => {
+    const withGamut = {
+      ...plainBulb,
+      capabilities: { dimming: false, colorTemperature: false, color: true },
+      colorXy: { x: 0.4578, y: 0.4101 },
+      colorGamut: {
+        red: { x: 0.6915, y: 0.3083 },
+        green: { x: 0.17, y: 0.7 },
+        blue: { x: 0.1532, y: 0.0475 },
+      },
+    };
+
+    expect(lightSchema.parse(withGamut).colorGamut).toEqual(
+      withGamut.colorGamut,
+    );
+  });
+
+  it("leaves the range and the gamut absent when the Bridge did not report them", () => {
+    expect(lightSchema.parse(plainBulb).mirekSchema).toBeUndefined();
+    expect(lightSchema.parse(plainBulb).colorGamut).toBeUndefined();
   });
 });
 
