@@ -3,13 +3,19 @@
  * connection banner, and the one live event stream — opened here rather
  * than on the login page, which needs no Invalidations for a Light it is
  * not showing.
+ *
+ * A route's own queries mount only once the stream has connected or has
+ * failed outright — never while still `connecting` — so the SSE
+ * subscription is established before the initial `ListLights` read, rather
+ * than racing it (issue #8).
  */
 import { useCallback } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 
 import { logout } from "../api/session.js";
 import { ConnectionBanner } from "../components/ConnectionBanner.js";
-import { LiveLightsProvider } from "../events/LiveLightsProvider.js";
+import { LoadingView } from "../components/OutageView.js";
+import { LiveLightsProvider, useLiveStatus } from "../events/LiveLightsProvider.js";
 import { useAuthRedirect } from "./useAuthRedirect.js";
 
 export function AuthenticatedLayout() {
@@ -36,9 +42,19 @@ export function AuthenticatedLayout() {
         </header>
         <ConnectionBanner />
         <main>
-          <Outlet />
+          <AuthenticatedRoutes />
         </main>
       </div>
     </LiveLightsProvider>
   );
+}
+
+function AuthenticatedRoutes() {
+  const status = useLiveStatus();
+
+  if (status.kind === "connecting") {
+    return <LoadingView />;
+  }
+
+  return <Outlet />;
 }

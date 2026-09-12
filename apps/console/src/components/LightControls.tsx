@@ -7,7 +7,7 @@
  * construct it.
  */
 import type { Light } from "../api/types.js";
-import { messageForOutcome } from "../domain/acknowledgementMessage.js";
+import { messageForError, messageForOutcome } from "../domain/acknowledgementMessage.js";
 import { usePendingCommand } from "../pending/PendingCommandsProvider.js";
 import { useUpdateLight } from "../queries/useUpdateLight.js";
 import { ApiError } from "../api/apiError.js";
@@ -28,9 +28,9 @@ export function LightControls({
 
   const message =
     lastError instanceof ApiError
-      ? lastError.message
+      ? messageForError(lastError)
       : lastAcknowledgement !== undefined
-        ? messageForOutcome(lastAcknowledgement.outcome)
+        ? messageForOutcome(lastAcknowledgement)
         : undefined;
 
   return (

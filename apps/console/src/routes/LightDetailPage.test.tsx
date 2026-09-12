@@ -182,3 +182,65 @@ describe("a Pending Command", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/would not/i);
   });
 });
+
+describe("a partial or unknown Outcome", () => {
+  it("clears the Pending Command and surfaces the Bridge's own diagnostic verbatim, for partial", async () => {
+    const light = aLight({ on: true });
+    vi.mocked(lightsApi.getLight).mockResolvedValue(light);
+    vi.mocked(lightsApi.updateLight).mockResolvedValue({
+      outcome: "partial",
+      updated: [{ rid: light.id, rtype: "light" }],
+      errors: [{ description: "the Bridge rejected the colour" }],
+      correlationId: "corr-3",
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Routes>
+        <Route path="/lights/:id" element={<LightDetailPage />} />
+      </Routes>,
+      { route: `/lights/${light.id}` },
+    );
+
+    await waitFor(() => screen.getByRole("switch"));
+    const toggle = screen.getByRole("switch") as HTMLInputElement;
+
+    await user.click(toggle);
+
+    await waitFor(() => {
+      expect(toggle.closest(".on-off")).not.toHaveClass("pending");
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "the Bridge rejected the colour",
+    );
+  });
+
+  it("clears the Pending Command and shows a transient couldn't-confirm notice for an unknown outcome", async () => {
+    const light = aLight({ on: true });
+    vi.mocked(lightsApi.getLight).mockResolvedValue(light);
+    vi.mocked(lightsApi.updateLight).mockResolvedValue({
+      outcome: "unknown",
+      updated: [],
+      errors: [],
+      correlationId: "corr-4",
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Routes>
+        <Route path="/lights/:id" element={<LightDetailPage />} />
+      </Routes>,
+      { route: `/lights/${light.id}` },
+    );
+
+    await waitFor(() => screen.getByRole("switch"));
+    const toggle = screen.getByRole("switch") as HTMLInputElement;
+
+    await user.click(toggle);
+
+    await waitFor(() => {
+      expect(toggle.closest(".on-off")).not.toHaveClass("pending");
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(/couldn't confirm/i);
+  });
+});
