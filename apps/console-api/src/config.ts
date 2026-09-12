@@ -11,6 +11,7 @@
  * gives: a token in an environment variable is a token in `docker inspect`, in
  * a crash dump, in a process listing and in every child process.
  */
+import { SESSION_DURATION_MS } from "./auth/session.js";
 import type { GatewayConfig } from "./gateway/index.js";
 import type { Version } from "./version.js";
 
@@ -21,6 +22,15 @@ const SECRETS = "/run/secrets";
 export interface AuthConfig {
   passwordHashFile: string;
   sessionSecretFile: string;
+  /**
+   * How long a session lasts since it was last used.
+   *
+   * `SESSION_DURATION_MS`'s default of thirty days, unless overridden — the
+   * real deployment never sets this. The one thing that does is the e2e
+   * Compose stack (docker-compose.e2e.yml), so a Playwright test can watch a
+   * session actually expire in test time rather than waiting thirty days.
+   */
+  sessionDurationMs: number;
 }
 
 /** Everything `server.ts` needs to start. */
@@ -46,6 +56,7 @@ export function settingsFrom(
       passwordHashFile: env["PASSWORD_HASH_FILE"] ?? `${SECRETS}/password-hash`,
       sessionSecretFile:
         env["SESSION_SECRET_FILE"] ?? `${SECRETS}/session-secret`,
+      sessionDurationMs: sessionDurationMsFrom(env["SESSION_DURATION_MS"]),
     },
     version: {
       // Not fatal when absent, and not pretended about either. A build that
@@ -90,4 +101,20 @@ function portFrom(value: string | undefined): number {
   }
 
   return port;
+}
+
+/** The session duration, or the default of `SESSION_DURATION_MS`. */
+function sessionDurationMsFrom(value: string | undefined): number {
+  if (value === undefined) {
+    return SESSION_DURATION_MS;
+  }
+
+  const durationMs = Number(value);
+  if (!Number.isInteger(durationMs) || durationMs < 1) {
+    throw new Error(
+      `SESSION_DURATION_MS is ${JSON.stringify(value)}, which is not a duration in milliseconds`,
+    );
+  }
+
+  return durationMs;
 }

@@ -39,6 +39,16 @@ export interface SignedSession {
 
 /** What a route needs to start, hold, and end a session. */
 export interface Sessions {
+  /**
+   * How long a freshly minted or renewed session lasts, in milliseconds.
+   *
+   * Read by `http/session.ts`'s cookie `Max-Age` rather than assumed to be
+   * `SESSION_DURATION_MS`: `config.ts`'s environment override means the two
+   * can differ, and a browser told the wrong one would keep a cookie past
+   * when the server has already stopped honouring it, or throw one away
+   * while the server still would.
+   */
+  readonly durationMs: number;
   /** A new session, distinct from every other one this process has minted. */
   mint(): SignedSession;
   /**
@@ -59,11 +69,17 @@ export interface Sessions {
  *
  * The clock is a parameter for the reason `meter.ts`'s is: expiry is
  * arithmetic on time passing, and a test that waits thirty days to ask
- * whether a cookie has expired is a test nobody runs.
+ * whether a cookie has expired is a test nobody runs. `durationMs` is a
+ * parameter for the same reason applied to the deploy rather than the test:
+ * `config.ts`'s `SESSION_DURATION_MS` environment override lets an e2e run
+ * watch a real, running server's session actually expire, which a black-box
+ * test otherwise cannot do — there is no server-side revocation to trigger
+ * instead (see this file's own top comment).
  */
 export function sessionsSignedWith(
   secret: string,
   now: () => number = Date.now,
+  durationMs: number = SESSION_DURATION_MS,
 ): Sessions {
   function signed(session: Session): SignedSession {
     const payload = `${session.id}.${session.expiresAt}`;
@@ -94,10 +110,12 @@ export function sessionsSignedWith(
   }
 
   return {
+    durationMs,
+
     mint() {
       return signed({
         id: randomBytes(16).toString("hex"),
-        expiresAt: now() + SESSION_DURATION_MS,
+        expiresAt: now() + durationMs,
       });
     },
 
@@ -111,7 +129,7 @@ export function sessionsSignedWith(
     },
 
     renew(session) {
-      return signed({ ...session, expiresAt: now() + SESSION_DURATION_MS });
+      return signed({ ...session, expiresAt: now() + durationMs });
     },
   };
 }

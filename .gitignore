@@ -22,3 +22,11 @@ secrets/*
 certs/*
 !certs/.gitkeep
 .env
+
+# The e2e Compose stack's own secrets and certificates, freshly minted per
+# checkout by scripts/e2e-secrets.sh — see docker-compose.e2e.yml.
+.e2e/
+
+# Where playwright test writes its own report and traces.
+apps/e2e/playwright-report/
+apps/e2e/test-results/

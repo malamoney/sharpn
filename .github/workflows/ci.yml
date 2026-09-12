@@ -46,3 +46,64 @@ jobs:
       - run: npm run build
 
       - run: npm test
+
+  # Issue #10's layers 2 and 3: the real Gateway and a fake Bridge, both from
+  # malamoney/hue, in front of the real console-api and nginx images —
+  # proving the vendored protos match the running service, and Playwright
+  # through the real Nginx for the handful of cases where every layer has to
+  # be right at once. Gated on `check` passing first: no reason to spend the
+  # minutes docker-compose.e2e.yml's builds take on a change that fails
+  # something faster.
+  e2e:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install the browser apps/e2e's Playwright specs run in
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/e2e
+
+      - run: scripts/e2e.sh up
+
+      - name: The real Gateway, against the vendored protos
+        run: npm run test:gateway --workspace=apps/e2e
+
+      # A fresh stack, not the one the suite above just ran against: its own
+      # last case deliberately stops and restarts the fake Bridge, and the
+      # Gateway's upstream event subscription to it takes a schedule of its
+      # own (jittered backoff, doubling to thirty seconds) to fully settle —
+      # long enough to have made two-browsers-converge.spec.ts flaky when it
+      # shared that same stack, observed in practice. Recreating is cheap:
+      # Docker's build cache means this is mostly the `--wait` healthcheck
+      # round trip, not a rebuild.
+      - run: scripts/e2e.sh down
+      - run: scripts/e2e.sh up
+
+      - name: Playwright, through the real Nginx
+        run: npm run test:playwright --workspace=apps/e2e
+
+      - name: Container logs, for whichever step above failed
+        if: failure()
+        run: scripts/e2e.sh logs
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/e2e/playwright-report/
+          retention-days: 7
+          # The gateway suite (Vitest, no HTML report) can be what failed
+          # instead of Playwright — nothing here to upload is not itself a
+          # failure.
+          if-no-files-found: ignore
+
+      - if: always()
+        run: scripts/e2e.sh down

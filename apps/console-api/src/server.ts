@@ -54,7 +54,11 @@ const server = createServer(
     streams,
     version: settings.version,
     meter: meterAtMost(MUTATIONS_PER_MINUTE),
-    sessions: sessionsSignedWith(readSessionSecret(settings.auth.sessionSecretFile)),
+    sessions: sessionsSignedWith(
+      readSessionSecret(settings.auth.sessionSecretFile),
+      Date.now,
+      settings.auth.sessionDurationMs,
+    ),
     passwords: passwordCheckFrom(settings.auth.passwordHashFile),
     loginMeter: meterAtMost(LOGIN_ATTEMPTS_PER_MINUTE),
   }),

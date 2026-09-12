@@ -1,0 +1,144 @@
+# Issue #10's layer 2 and layer 3 stack: the real Gateway and a fake Bridge,
+# both from malamoney/hue (tools/e2e/hue.Dockerfile), in front of the real
+# console-api and nginx images — proving the vendored protos match the
+# running service, and giving Playwright a real Nginx to go through.
+#
+# Standalone rather than an override of docker-compose.yml: that file's
+# GATEWAY_HOSTNAME/GATEWAY_HOST_IP are required with `${VAR:?...}`, which
+# Compose evaluates before any override file can replace them, and the LAN
+# `extra_hosts` workaround they exist for has nothing to do here — the
+# `gateway` service below is reachable by its Compose service name.
+#
+#   scripts/e2e.sh up      # mints secrets, builds, waits for every healthcheck
+#   npm run test:gateway --workspace=apps/e2e
+#   scripts/e2e.sh down && scripts/e2e.sh up   # see below
+#   npm run test:playwright --workspace=apps/e2e
+#   scripts/e2e.sh down
+#
+# The recreation between the two: the gateway suite's own last case stops and
+# restarts the fake Bridge on purpose, and the Gateway's upstream event
+# subscription to it takes a schedule of its own (jittered backoff, doubling
+# to thirty seconds) to fully settle — long enough to have made
+# two-browsers-converge.spec.ts flaky when it shared that same stack,
+# observed in practice. A fresh stack sidesteps it rather than chasing that
+# timing; it is cheap, since Docker's build cache means this is mostly the
+# `--wait` healthcheck round trip, not a rebuild.
+
+name: sharpn-e2e
+
+networks:
+  sharpn-e2e:
+    driver: bridge
+
+volumes:
+  # Written once by `fake-bridge` (its CA + Bridge-shaped leaf, minted on
+  # first start) and read by `gateway` to verify it — the same certificate
+  # material a real Bridge/Gateway pair would use, not a Compose secret,
+  # because a secret's file has to exist before `up` rather than get written
+  # by a container during it.
+  bridge-certs:
+
+secrets:
+  # The gateway<->console-api leg (scripts/e2e-secrets.sh mints these into
+  # .e2e/certs): `gateway` serves this pair, `console-api` pins the
+  # certificate as its one trust root — ADR 0004's shape.
+  gateway-certificate:
+    file: ./.e2e/certs/gateway-cert.pem
+  gateway-private-key:
+    file: ./.e2e/certs/gateway-key.pem
+  gateway-token:
+    file: ./.e2e/secrets/gateway-token
+  # The bridge<->gateway leg.
+  bridge-application-key:
+    file: ./.e2e/secrets/bridge-application-key
+  bridge-credentials:
+    file: ./.e2e/secrets/bridge-credentials
+  # console-api's own, same names and same meaning as docker-compose.yml's.
+  password-hash:
+    file: ./.e2e/secrets/password-hash
+  session-secret:
+    file: ./.e2e/secrets/session-secret
+
+services:
+  fake-bridge:
+    build:
+      context: tools/e2e
+      dockerfile: hue.Dockerfile
+      target: fake-bridge
+      args:
+        HUE_REVISION: ${HUE_REVISION:?run scripts/e2e.sh, not docker compose directly}
+    networks:
+      - sharpn-e2e
+    environment:
+      BRIDGE_ID: ${BRIDGE_ID}
+    volumes:
+      - bridge-certs:/var/lib/fake-hue/certs
+    secrets:
+      - bridge-application-key
+
+  gateway:
+    build:
+      context: tools/e2e
+      dockerfile: hue.Dockerfile
+      target: gateway
+      args:
+        HUE_REVISION: ${HUE_REVISION:?run scripts/e2e.sh, not docker compose directly}
+    networks:
+      - sharpn-e2e
+    environment:
+      BRIDGE_ID: ${BRIDGE_ID}
+      BRIDGE_ADDRESS: fake-bridge:443
+    volumes:
+      - bridge-certs:/var/lib/fake-hue/certs:ro
+    secrets:
+      - gateway-certificate
+      - gateway-private-key
+      - gateway-token
+      - bridge-credentials
+    depends_on:
+      fake-bridge:
+        condition: service_healthy
+
+  console-api:
+    build:
+      context: .
+      dockerfile: apps/console-api/Dockerfile
+    networks:
+      - sharpn-e2e
+    environment:
+      GATEWAY_TARGET: gateway:50051
+      # The seam config.ts/auth/session.ts added for exactly this: short
+      # enough for expired-session-closes-stream.spec.ts to watch a real
+      # session expire without a 30-day wait, but not so short that an
+      # ordinary multi-step Playwright flow elsewhere in this stack — opening
+      # two browser contexts, signing each in, navigating — outruns it and
+      # gets treated as an expiry nothing here meant to test. Observed in
+      # practice: 5s was too tight for two-browsers-converge.spec.ts.
+      SESSION_DURATION_MS: 20000
+    secrets:
+      - gateway-certificate
+      - gateway-token
+      - password-hash
+      - session-secret
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  nginx:
+    build:
+      context: .
+      dockerfile: apps/console/Dockerfile
+    networks:
+      - sharpn-e2e
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      # Nginx's own TLS, distinct from the gateway<->console-api leg above —
+      # self-signed, matching what apps/e2e/playwright.config.ts trusts via
+      # ignoreHTTPSErrors rather than a real CA nobody would mint for a
+      # throwaway stack.
+      - ./.e2e/certs/nginx:/etc/nginx/tls:ro
+    depends_on:
+      console-api:
+        condition: service_healthy
