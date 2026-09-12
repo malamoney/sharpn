@@ -1,15 +1,19 @@
-/**
- * The Console, which does not yet show any Lights.
- *
- * The list, the detail view and the capability-aware controls are issue #7;
- * live synchronisation is issue #8. What exists here is the skeleton those
- * build in.
- */
+import { QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
+import { RouterProvider } from "react-router";
+
+import { PendingCommandsProvider } from "./pending/PendingCommandsProvider.js";
+import { createQueryClient } from "./queries/queryClient.js";
+import { router } from "./router.js";
+
 export function App() {
+  const [queryClient] = useState(createQueryClient);
+
   return (
-    <main>
-      <h1>sharpn</h1>
-      <p>The Console is not built yet.</p>
-    </main>
+    <QueryClientProvider client={queryClient}>
+      <PendingCommandsProvider>
+        <RouterProvider router={router} />
+      </PendingCommandsProvider>
+    </QueryClientProvider>
   );
 }

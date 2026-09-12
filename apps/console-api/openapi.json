@@ -724,13 +724,54 @@
           "brightness": {
             "type": "number"
           },
+          "minDimLevel": {
+            "type": "number"
+          },
           "colorTemperatureMirek": {
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "mirekSchema": {
+            "type": "object",
+            "properties": {
+              "mirekMinimum": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "mirekMaximum": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "mirekMinimum",
+              "mirekMaximum"
+            ]
+          },
           "colorXy": {
             "$ref": "#/components/schemas/ColorXy"
+          },
+          "colorGamut": {
+            "type": "object",
+            "properties": {
+              "red": {
+                "$ref": "#/components/schemas/ColorXy"
+              },
+              "green": {
+                "$ref": "#/components/schemas/ColorXy"
+              },
+              "blue": {
+                "$ref": "#/components/schemas/ColorXy"
+              }
+            },
+            "required": [
+              "red",
+              "green",
+              "blue"
+            ]
           },
           "capabilities": {
             "$ref": "#/components/schemas/LightCapabilities"

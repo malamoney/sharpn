@@ -17,7 +17,12 @@ import {
 } from "../gen/hue/v1/common.js";
 import { Event_Type } from "../gen/hue/v1/events.js";
 import { Gap_Cause, type HueEvent } from "../gen/hue/v1/event_service.js";
-import type { LightGet, LightPut } from "../gen/hue/v1/lighting.js";
+import type {
+  LightGet,
+  LightGet_Color_Gamut,
+  LightGet_ColorTemperature_MirekSchema,
+  LightPut,
+} from "../gen/hue/v1/lighting.js";
 import type { MutationResponse } from "../gen/hue/v1/lighting_service.js";
 import {
   lightArchetypeSchema,
@@ -48,14 +53,64 @@ export function lightFrom(reported: LightGet): Light {
     archetype: archetypeFrom(reported.metadata?.archetype),
     on: reported.on?.on ?? false,
     brightness: reported.dimming?.brightness,
+    minDimLevel: reported.dimming?.minDimLevel,
     colorTemperatureMirek: reported.colorTemperature?.mirek,
+    mirekSchema: mirekRangeFrom(reported.colorTemperature?.mirekSchema),
     colorXy: reported.color?.xy,
+    colorGamut: colorGamutFrom(reported.color?.gamut),
     capabilities: {
       dimming: reported.dimming !== undefined,
       colorTemperature: reported.colorTemperature !== undefined,
       color: reported.color !== undefined,
     },
   };
+}
+
+/**
+ * The bulb's own mirek range, or `undefined` if the Bridge did not report
+ * both ends of it.
+ *
+ * A schema with one end missing bounds nothing a Console control could use,
+ * so it is treated the same as no schema at all rather than passed on half
+ * complete.
+ */
+function mirekRangeFrom(
+  reported: LightGet_ColorTemperature_MirekSchema | undefined,
+): Light["mirekSchema"] {
+  if (
+    reported?.mirekMinimum === undefined ||
+    reported?.mirekMaximum === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    mirekMinimum: reported.mirekMinimum,
+    mirekMaximum: reported.mirekMaximum,
+  };
+}
+
+/**
+ * The triangle a colour bulb can actually produce, or `undefined` if the
+ * Bridge did not report all three corners.
+ *
+ * The proto's own comment on `LightGet.Color.gamut` says some bulbs do not
+ * properly return this, in which case the whole submessage is absent — this
+ * is what a Console colour picker reads to fall back to an HSV wheel rather
+ * than drawing a triangle with a corner missing.
+ */
+function colorGamutFrom(
+  reported: LightGet_Color_Gamut | undefined,
+): Light["colorGamut"] {
+  if (
+    reported?.red === undefined ||
+    reported?.green === undefined ||
+    reported?.blue === undefined
+  ) {
+    return undefined;
+  }
+
+  return { red: reported.red, green: reported.green, blue: reported.blue };
 }
 
 /**

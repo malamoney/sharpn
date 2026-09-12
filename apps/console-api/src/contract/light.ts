@@ -83,6 +83,35 @@ export const colorXySchema = z.object({
 });
 
 /**
+ * The triangle a colour bulb can actually produce, corner to corner in CIE
+ * xy — read from `LightGet.Color.gamut`, not derived from `gamut_type`.
+ *
+ * Optional on the Light rather than always present: the proto notes some
+ * bulbs do not properly return it, in which case the whole submessage is
+ * absent. A picker with nowhere to read a triangle from has one other option,
+ * which issue #7 is: an HSV wheel assuming Gamut C.
+ */
+export const colorGamutSchema = z.object({
+  red: colorXySchema,
+  green: colorXySchema,
+  blue: colorXySchema,
+});
+
+/**
+ * The mirek range a colour-temperature bulb accepts, read from
+ * `LightGet.ColorTemperature.mirek_schema`.
+ *
+ * `command.ts`'s `MIREK` is the range Hue's spec gives as the outer bound —
+ * 153–500 — and this is the bulb's own, which the spec says varies per bulb
+ * within it. Optional because the Bridge does not always report one; a
+ * control with nowhere to read a range from falls back to the outer bound.
+ */
+export const mirekRangeSchema = z.object({
+  mirekMinimum: z.number().int(),
+  mirekMaximum: z.number().int(),
+});
+
+/**
  * What a Light can be told to do, read from the Light itself.
  *
  * Each flag is the presence of a field on `LightGet` and nothing else: a light
@@ -105,7 +134,11 @@ export const lightCapabilitiesSchema = z.object({
  * `gradient`, `signaling`, `alert`, `dynamics`, `timed_effects`, `powerup`,
  * `geometry`, `mode`, `owner` or `service_id`. A field that is exposed is a
  * field whose compatibility this project owns, and none of those is worth
- * owning until something in the Console asks for it.
+ * owning until something in the Console asks for it. `minDimLevel`,
+ * `colorGamut` and `mirekSchema` are exposed because issue #7's controls ask
+ * for them: a brightness slider that can floor correctly, a colour picker
+ * that can draw the triangle a bulb actually produces, and a temperature
+ * slider bounded by what a bulb accepts rather than by Hue's outer bound.
  *
  * The numbers here are unbounded, where a Command's are not. A response
  * reports what a Bridge said, and dropping a Light out of a list because a
@@ -119,11 +152,16 @@ export const lightSchema = z.object({
   archetype: lightArchetypeSchema,
   on: z.boolean(),
   brightness: z.number().optional(),
+  minDimLevel: z.number().optional(),
   colorTemperatureMirek: z.number().int().optional(),
+  mirekSchema: mirekRangeSchema.optional(),
   colorXy: colorXySchema.optional(),
+  colorGamut: colorGamutSchema.optional(),
   capabilities: lightCapabilitiesSchema,
 });
 
 export type Light = z.infer<typeof lightSchema>;
 export type LightArchetype = z.infer<typeof lightArchetypeSchema>;
 export type LightCapabilities = z.infer<typeof lightCapabilitiesSchema>;
+export type ColorGamut = z.infer<typeof colorGamutSchema>;
+export type MirekRange = z.infer<typeof mirekRangeSchema>;
