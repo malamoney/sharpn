@@ -1,8 +1,20 @@
+import {
+  Button,
+  Card,
+  Center,
+  chakra,
+  Field,
+  Flex,
+  Heading,
+  Input,
+  Text,
+} from "@chakra-ui/react";
 import { useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 
 import { ApiError } from "../api/apiError.js";
 import { login } from "../api/session.js";
+import { BrandMark } from "../components/BrandMark.js";
 
 interface LocationState {
   from?: string;
@@ -32,29 +44,58 @@ export function LoginPage() {
   }
 
   return (
-    <main className="login-page">
-      <h1>sharpn</h1>
-      <form onSubmit={(event) => void handleSubmit(event)}>
-        <label htmlFor="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => setPassword(event.currentTarget.value)}
-          disabled={submitting}
-          required
-        />
-        <button type="submit" disabled={submitting || password.length === 0}>
-          Sign in
-        </button>
-        {error !== undefined && (
-          <p role="alert" className="login-error">
-            {error}
-          </p>
-        )}
-      </form>
-    </main>
+    <Center as="main" minH="100vh" px="4" py="6">
+      <Card.Root w="full" maxW="360px" rounded="16px" border="none" shadow="card" bg="white">
+        <Card.Body px="7" py="8" gap="2">
+          <Flex align="center" gap="3">
+            <BrandMark size={44} />
+            <Heading as="h1" fontSize="22px" fontWeight="800" letterSpacing="-0.02em">
+              Sharpn
+            </Heading>
+          </Flex>
+          <Text mb="3" fontSize="13.5px" color="gray.500">
+            Sign in to see and change your lights.
+          </Text>
+          <chakra.form
+            display="flex"
+            flexDirection="column"
+            gap="2"
+            onSubmit={(event) => void handleSubmit(event)}
+          >
+            <Field.Root required>
+              <Field.Label fontSize="13px" fontWeight="600" color="gray.600">
+                Password
+              </Field.Label>
+              <Input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.currentTarget.value)}
+                disabled={submitting}
+                h="40px"
+                rounded="8px"
+              />
+            </Field.Root>
+            <Button
+              type="submit"
+              colorPalette="blue"
+              mt="2"
+              h="40px"
+              rounded="8px"
+              fontWeight="600"
+              disabled={submitting || password.length === 0}
+            >
+              Sign in
+            </Button>
+            {error !== undefined && (
+              <Text role="alert" mt="1" fontSize="13px" color="red.500">
+                {error}
+              </Text>
+            )}
+          </chakra.form>
+        </Card.Body>
+      </Card.Root>
+    </Center>
   );
 }
 

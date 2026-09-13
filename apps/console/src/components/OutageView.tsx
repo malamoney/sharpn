@@ -4,22 +4,31 @@
  * unreachable, `GATEWAY_UNREACHABLE`, and `BRIDGE_UNREACHABLE` or
  * `GATEWAY_NOT_PAIRED` folded together as one Bridge-side cause.
  */
+import { Alert, Text } from "@chakra-ui/react";
+
 import { classifyOutage, messageForOutage } from "../api/apiError.js";
 
 export function OutageView({ error }: { error: unknown }) {
   const outage = classifyOutage(error);
 
   return (
-    <div className="outage-view" role="alert" data-outage-kind={outage.kind}>
-      <p>{messageForOutage(outage)}</p>
-    </div>
+    <Alert.Root
+      status="error"
+      variant="subtle"
+      role="alert"
+      rounded="16px"
+      data-outage-kind={outage.kind}
+    >
+      <Alert.Indicator />
+      <Alert.Description>{messageForOutage(outage)}</Alert.Description>
+    </Alert.Root>
   );
 }
 
 export function LoadingView() {
   return (
-    <p className="loading-view" role="status">
+    <Text role="status" color="gray.500">
       Loading…
-    </p>
+    </Text>
   );
 }

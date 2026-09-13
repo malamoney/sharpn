@@ -7,6 +7,8 @@
  * handled per-query elsewhere: a person looking at a light list that stopped
  * updating needs to know it stopped, not just that it once loaded.
  */
+import { Alert } from "@chakra-ui/react";
+
 import { useLiveStatus } from "../events/LiveLightsProvider.js";
 
 export function ConnectionBanner() {
@@ -16,31 +18,23 @@ export function ConnectionBanner() {
     return null;
   }
 
-  if (status.kind === "disconnected") {
-    return (
-      <p className="connection-banner" role="status">
-        Lost the live connection — trying to reconnect. What's on screen may
-        be stale.
-      </p>
-    );
+  const message =
+    status.kind === "disconnected"
+      ? "Lost the live connection — trying to reconnect. What's on screen may be stale."
+      : status.gateway === "reconnecting"
+        ? "The Gateway connection is reconnecting. What's on screen may be stale."
+        : status.resyncing
+          ? "Catching up on changes…"
+          : undefined;
+
+  if (message === undefined) {
+    return null;
   }
 
-  if (status.gateway === "reconnecting") {
-    return (
-      <p className="connection-banner" role="status">
-        The Gateway connection is reconnecting. What's on screen may be
-        stale.
-      </p>
-    );
-  }
-
-  if (status.resyncing) {
-    return (
-      <p className="connection-banner" role="status">
-        Catching up on changes…
-      </p>
-    );
-  }
-
-  return null;
+  return (
+    <Alert.Root status="warning" variant="subtle" role="status" rounded="8px">
+      <Alert.Indicator />
+      <Alert.Description>{message}</Alert.Description>
+    </Alert.Root>
+  );
 }
