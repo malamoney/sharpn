@@ -1,3 +1,4 @@
+import { ChakraProvider } from "@chakra-ui/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -5,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as eventStreamModule from "../events/eventStream.js";
 import { handlersPassedIn, openEventStreamMock } from "../test/eventStreamTestSupport.js";
+import { system } from "../theme.js";
 import { AuthenticatedLayout } from "./AuthenticatedLayout.js";
 
 vi.mock("../events/eventStream.js", async () => {
@@ -30,9 +32,11 @@ function renderLayout() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
+    <ChakraProvider value={system}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ChakraProvider>,
   );
 }
 

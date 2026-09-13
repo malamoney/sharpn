@@ -3,6 +3,8 @@
  * six shapes plus a default, not the 49 real archetypes: issue #7 calls
  * drawing all of them a week of assets for a house with fifteen bulbs.
  */
+import { Icon, type IconProps } from "@chakra-ui/react";
+
 import type { LightArchetype } from "../api/types.js";
 import { iconBucketFor, type IconBucket } from "../domain/archetypeIcon.js";
 
@@ -16,18 +18,27 @@ const PATHS: Record<IconBucket, string> = {
   default: "M12 2a7 7 0 0 0-4 12.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26A7 7 0 0 0 12 2Z",
 };
 
-export function ArchetypeIcon({ archetype }: { archetype: LightArchetype }) {
+export function ArchetypeIcon({
+  archetype,
+  ...props
+}: { archetype: LightArchetype } & IconProps) {
   const bucket = iconBucketFor(archetype);
 
   return (
-    <svg
+    <Icon
+      as="svg"
       className={`archetype-icon archetype-icon-${bucket}`}
       viewBox="0 0 24 24"
-      width={24}
-      height={24}
+      boxSize="24px"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden="true"
+      {...props}
     >
-      <path d={PATHS[bucket]} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+      <path d={PATHS[bucket]} />
+    </Icon>
   );
 }

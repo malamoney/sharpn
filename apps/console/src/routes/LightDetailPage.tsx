@@ -2,11 +2,15 @@
  * `/lights/:id`: one Light, deep-linkable, with every control its
  * Capabilities allow.
  */
-import { useParams } from "react-router";
+import { Button, Card, Flex, Text } from "@chakra-ui/react";
+import { Link as RouterLink, useParams } from "react-router";
 
-import { ArchetypeIcon } from "../components/ArchetypeIcon.js";
+import { LightIconTile } from "../components/LightCard.js";
 import { LightControls } from "../components/LightControls.js";
 import { LoadingView, OutageView } from "../components/OutageView.js";
+import { PageHeader } from "../components/PageHeader.js";
+import { ChevronLeftIcon } from "../components/icons.js";
+import { archetypeLabel } from "../domain/archetypeLabel.js";
 import { useLightQuery } from "../queries/lightsQueries.js";
 
 export function LightDetailPage() {
@@ -17,29 +21,46 @@ export function LightDetailPage() {
     return <OutageView error={new Error("no light id in the URL")} />;
   }
 
-  if (query.isPending) {
-    return <LoadingView />;
-  }
-
-  if (query.isError) {
-    return <OutageView error={query.error} />;
-  }
-
   const light = query.data;
 
   return (
-    <article className="light-detail">
-      <header>
-        <ArchetypeIcon archetype={light.archetype} />
-        <h1>{light.name}</h1>
-      </header>
-      {/* The known limitation issue #7 asks to surface honestly, rather than
-          a name field that quietly does nothing when edited: `LightPut`
-          carries no `metadata`, so a Light cannot be renamed here. */}
-      <p className="rename-notice">
-        Names come from the Bridge and can't be changed here.
-      </p>
-      <LightControls light={light} dataUpdatedAt={query.dataUpdatedAt} />
-    </article>
+    <>
+      <PageHeader
+        title={
+          <Flex as="span" display="inline-flex" align="center" gap="3">
+            {light !== undefined && (
+              <LightIconTile archetype={light.archetype} on={light.on} />
+            )}
+            {light?.name ?? "Light"}
+          </Flex>
+        }
+        subtitle={light !== undefined ? archetypeLabel(light.archetype) : undefined}
+      >
+        <Button asChild variant="outline" bg="white" h="40px" rounded="8px" fontWeight="600">
+          <RouterLink to="/">
+            <ChevronLeftIcon boxSize="14px" />
+            All lights
+          </RouterLink>
+        </Button>
+      </PageHeader>
+
+      {query.isPending ? (
+        <LoadingView />
+      ) : query.isError ? (
+        <OutageView error={query.error} />
+      ) : (
+        <Card.Root as="article" maxW="560px" rounded="16px" border="none" shadow="card" bg="white">
+          <Card.Body p="6">
+            {/* The known limitation issue #7 asks to surface honestly, rather than
+                a name field that quietly does nothing when edited: `LightPut`
+                carries no `metadata`, so a Light cannot be renamed here. */}
+            <Text fontSize="12.5px" color="gray.500">
+              Names come from the Bridge and can't be changed here.
+            </Text>
+            <LightControls light={query.data} dataUpdatedAt={query.dataUpdatedAt} />
+          </Card.Body>
+        </Card.Root>
+      )}
+    </>
   );
 }

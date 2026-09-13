@@ -6,6 +6,8 @@
  * same request; ADR 0005 refuses that combination, but nothing here can even
  * construct it.
  */
+import { Stack, Text } from "@chakra-ui/react";
+
 import type { Light } from "../api/types.js";
 import { messageForError, messageForOutcome } from "../domain/acknowledgementMessage.js";
 import { usePendingCommand } from "../pending/PendingCommandsProvider.js";
@@ -34,7 +36,7 @@ export function LightControls({
         : undefined;
 
   return (
-    <div className="light-controls">
+    <Stack gap="6" mt="5">
       <OnOffToggle
         on={light.on}
         pendingOn={pending?.command.on}
@@ -71,10 +73,10 @@ export function LightControls({
       )}
 
       {message !== undefined && (
-        <p role="status" className="command-message">
+        <Text role="status" fontSize="13px" color="red.500">
           {message}
-        </p>
+        </Text>
       )}
-    </div>
+    </Stack>
   );
 }
