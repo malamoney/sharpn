@@ -9,7 +9,7 @@ import type { Acknowledgement } from "../api/types.js";
 import { PendingCommandsProvider, usePendingCommands } from "../pending/PendingCommandsProvider.js";
 import { anAcknowledgement } from "../test/acknowledgements.js";
 import { deferred } from "../test/deferred.js";
-import { lightDetailKey } from "./queryKeys.js";
+import { lightDetailKey, lightsListKey } from "./queryKeys.js";
 import { useUpdateLight } from "./useUpdateLight.js";
 
 vi.mock("../api/lights.js");
@@ -167,6 +167,9 @@ describe("after partial or MUTATION_OUTCOME_UNKNOWN", () => {
       queryKey: lightDetailKey("l1"),
       exact: true,
     });
+    // The list holds a copy of l1 too, and on the list page it is the only
+    // query mounted — refetching the detail alone would re-read nothing.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: lightsListKey, exact: true });
   });
 
   it("clears the Pending Command and refetches that Light when the Acknowledgement itself says unknown", async () => {
@@ -186,6 +189,9 @@ describe("after partial or MUTATION_OUTCOME_UNKNOWN", () => {
       queryKey: lightDetailKey("l1"),
       exact: true,
     });
+    // The list holds a copy of l1 too, and on the list page it is the only
+    // query mounted — refetching the detail alone would re-read nothing.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: lightsListKey, exact: true });
   });
 
   it("clears the Pending Command and refetches that Light on MUTATION_OUTCOME_UNKNOWN", async () => {
@@ -211,6 +217,9 @@ describe("after partial or MUTATION_OUTCOME_UNKNOWN", () => {
       queryKey: lightDetailKey("l1"),
       exact: true,
     });
+    // The list holds a copy of l1 too, and on the list page it is the only
+    // query mounted — refetching the detail alone would re-read nothing.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: lightsListKey, exact: true });
   });
 });
 
@@ -230,10 +239,7 @@ describe("a rejection or an ordinary transport failure", () => {
     await waitFor(() => {
       expect(result.current.pending.pending["l1"]).toBeUndefined();
     });
-    expect(invalidateSpy).not.toHaveBeenCalledWith({
-      queryKey: lightDetailKey("l1"),
-      exact: true,
-    });
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
   it("clears the Pending Command immediately on an unrelated ApiError, without refetching", async () => {
@@ -255,9 +261,6 @@ describe("a rejection or an ordinary transport failure", () => {
     await waitFor(() => {
       expect(result.current.pending.pending["l1"]).toBeUndefined();
     });
-    expect(invalidateSpy).not.toHaveBeenCalledWith({
-      queryKey: lightDetailKey("l1"),
-      exact: true,
-    });
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });

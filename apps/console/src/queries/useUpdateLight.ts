@@ -24,15 +24,14 @@
  * exists to avoid: both clear it immediately and refetch the Light instead
  * of waiting for an Invalidation that may never come.
  */
-import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef } from "react";
 
 import { ApiError } from "../api/apiError.js";
 import { updateLight } from "../api/lights.js";
 import type { Acknowledgement, LightCommand } from "../api/types.js";
 import { usePendingCommands } from "../pending/PendingCommandsProvider.js";
-import { lightDetailKey } from "./queryKeys.js";
-import { raceAwareInvalidate } from "./raceAwareInvalidate.js";
+import { invalidateLight } from "./invalidateLight.js";
 
 export interface UpdateLightResult {
   send(lightId: string, command: LightCommand): void;
@@ -58,11 +57,6 @@ function xyEqual(
     return a === b;
   }
   return a.x === b.x && a.y === b.y;
-}
-
-/** Refetches the Light itself — never the list, which nothing here changed. */
-function refetchLight(queryClient: QueryClient, lightId: string): void {
-  raceAwareInvalidate(queryClient, lightDetailKey(lightId));
 }
 
 export function useUpdateLight(): UpdateLightResult {
@@ -117,14 +111,14 @@ export function useUpdateLight(): UpdateLightResult {
               acknowledgement.outcome === "unknown"
             ) {
               clearPending(lightId, sentAt);
-              refetchLight(queryClient, lightId);
+              invalidateLight(queryClient, lightId);
             }
             settle(lightId, command);
           },
           onError(error) {
             clearPending(lightId, sentAt);
             if (error instanceof ApiError && error.code === "MUTATION_OUTCOME_UNKNOWN") {
-              refetchLight(queryClient, lightId);
+              invalidateLight(queryClient, lightId);
             }
             settle(lightId, command);
           },

@@ -2,10 +2,10 @@
  * Wires `eventStream.ts` to the query cache and exposes what it says about
  * the connection.
  *
- * `light.changed` invalidates that one Light's detail query and nothing
- * more — an Invalidation carries an id only (ADR 0002), so a `light.changed`
- * has nothing to say about the list. `light.added` and `light.removed`
- * change which Lights exist, so they invalidate the list instead.
+ * `light.changed` invalidates that one Light wherever the Console holds a
+ * copy of it — its detail query and the list (`invalidateLight.ts`), never
+ * a sibling's. `light.added` and `light.removed` change which Lights
+ * exist, so they invalidate the list alone.
  *
  * `raceAwareInvalidate` rather than `queryClient.invalidateQueries` directly:
  * a query already mid-fetch when an Invalidation arrives may have been
@@ -33,7 +33,8 @@ import {
 } from "react";
 
 import { openEventStream, type ConnectionStatus } from "./eventStream.js";
-import { LIGHTS, lightDetailKey, lightsListKey } from "../queries/queryKeys.js";
+import { invalidateLight } from "../queries/invalidateLight.js";
+import { LIGHTS, lightsListKey } from "../queries/queryKeys.js";
 import { raceAwareInvalidate } from "../queries/raceAwareInvalidate.js";
 
 export type LiveStatus =
@@ -56,7 +57,7 @@ export function LiveLightsProvider({ children }: { children: ReactNode }) {
     const handle = openEventStream("/api/v1/events", {
       onLightNotice({ id, change }) {
         if (change === "changed") {
-          raceAwareInvalidate(queryClient, lightDetailKey(id));
+          invalidateLight(queryClient, id);
           return;
         }
 

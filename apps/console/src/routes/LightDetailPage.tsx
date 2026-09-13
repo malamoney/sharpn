@@ -34,7 +34,14 @@ export function LightDetailPage() {
             {light?.name ?? "Light"}
           </Flex>
         }
-        subtitle={light !== undefined ? archetypeLabel(light.archetype) : undefined}
+        // "Off · Table shade": the state as last read, never the Pending
+        // Command — that is the switch's to show, and it is marked as such
+        // there. This line changes when a fresher read does (ADR 0001).
+        subtitle={
+          light !== undefined
+            ? `${light.on ? "On" : "Off"} · ${archetypeLabel(light.archetype)}`
+            : undefined
+        }
       >
         <Button asChild variant="outline" bg="white" h="40px" rounded="8px" fontWeight="600">
           <RouterLink to="/">

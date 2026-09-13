@@ -4,10 +4,11 @@
  * A change one person makes has to reach the other's screen with no manual
  * refresh — the whole reason the Console holds an SSE connection open rather
  * than polling. Both browsers sit on the light's own detail page rather than
- * the list: `LiveLightsProvider`'s own comment is explicit that a
- * `light.changed` Invalidation carries an id only (ADR 0002) and invalidates
- * that Light's detail query, not the list — the list re-sorts only on an
- * add/remove. The detail page is where live convergence is actually promised.
+ * the list: one switch on the page, found by role alone, is the sharpest
+ * signal there is. A `light.changed` Invalidation carries an id only (ADR
+ * 0002) and re-reads that Light wherever the Console holds a copy —
+ * `invalidateLight.ts`: its detail query and the list — so the list would
+ * converge too; it is simply not the page this spec needs.
  */
 import { expect, test } from "@playwright/test";
 
