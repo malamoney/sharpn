@@ -95,6 +95,40 @@ describe("capability-aware controls", () => {
   });
 });
 
+describe("the header's state line", () => {
+  it("names the Light's on/off state beside its fitting, and follows a fresher read", async () => {
+    const light = aLight({ on: true, archetype: "table_shade" });
+    vi.mocked(lightsApi.updateLight).mockResolvedValue({
+      outcome: "success",
+      updated: [{ rid: light.id, rtype: "light" }],
+      errors: [],
+      correlationId: "corr-0",
+    });
+
+    const user = userEvent.setup();
+    const { queryClient } = renderDetail(light);
+
+    await waitFor(() => screen.getByRole("switch"));
+    const header = screen.getByRole("banner");
+    expect(header).toHaveTextContent("On · Table shade");
+
+    await user.click(screen.getByRole("switch"));
+
+    // A Pending Command belongs to the switch, marked as such; the header
+    // states what is known to be true, so it is unmoved until a fresher read
+    // (ADR 0001).
+    expect(header).toHaveTextContent("On · Table shade");
+    await waitFor(() => expect(lightsApi.updateLight).toHaveBeenCalled());
+    expect(header).toHaveTextContent("On · Table shade");
+
+    queryClient.setQueryData(lightDetailKey(light.id), { ...light, on: false });
+
+    await waitFor(() => {
+      expect(header).toHaveTextContent("Off · Table shade");
+    });
+  });
+});
+
 describe("a Pending Command", () => {
   it("shows what was asked for, distinctly, until a fresher read settles it", async () => {
     const light = aLight({ on: true });

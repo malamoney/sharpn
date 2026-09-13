@@ -34,7 +34,7 @@ function aQueryClient(): QueryClient {
 }
 
 describe("light.changed", () => {
-  it("invalidates only that Light's detail query, and nothing more (ADR 0002)", () => {
+  it("invalidates that Light's detail query and the list it also appears in, and nothing wider", () => {
     const queryClient = aQueryClient();
     const spy = vi.spyOn(queryClient, "invalidateQueries");
     renderProvider(queryClient);
@@ -42,10 +42,10 @@ describe("light.changed", () => {
     handlersPassedIn().onLightNotice({ id: "l1", change: "changed" });
 
     expect(spy).toHaveBeenCalledWith({ queryKey: lightDetailKey("l1"), exact: true });
-    expect(spy).not.toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: lightsListKey }),
-    );
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith({ queryKey: lightsListKey, exact: true });
+    // Never the prefix: a sibling's detail query has nothing to do with l1.
+    expect(spy).not.toHaveBeenCalledWith(expect.objectContaining({ queryKey: LIGHTS }));
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });
 
