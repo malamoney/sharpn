@@ -16,6 +16,12 @@
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  connect as connectTo,
+  createServer,
+  type AddressInfo,
+  type Socket,
+} from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -66,6 +72,7 @@ import {
   type Gateway,
   type GatewayConfig,
   type GatewayResult,
+  type Keepalive,
   type Notice,
 } from "./index.js";
 
@@ -239,15 +246,71 @@ afterEach(() => {
 });
 
 /** The adapter, dialling the fake Gateway with the certificate it pinned. */
-function connect(overrides: Partial<GatewayConfig> = {}): Gateway {
-  gateway = connectToGateway({
-    target,
-    certificateFile,
-    tokenFile,
-    ...overrides,
-  });
+function connect(
+  overrides: Partial<GatewayConfig> = {},
+  keepalive?: Keepalive,
+): Gateway {
+  gateway = connectToGateway(
+    {
+      target,
+      certificateFile,
+      tokenFile,
+      ...overrides,
+    },
+    keepalive,
+  );
 
   return gateway;
+}
+
+/**
+ * A TCP relay in front of the fake Gateway that can stop forwarding without
+ * closing either side.
+ *
+ * TLS passes through it untouched, so the adapter still verifies the fake
+ * Gateway's certificate. `fallSilent` unhooks the two directions and stops
+ * reading: bytes the adapter sends are acknowledged by the kernel and go
+ * nowhere, and nothing ever comes back — which is exactly what a peer that
+ * vanished without a FIN looks like from the adapter's side.
+ */
+async function relayTo(upstream: string): Promise<{
+  target: string;
+  fallSilent(): void;
+  close(): void;
+}> {
+  const [host, port] = upstream.split(":");
+  const connections: Array<[Socket, Socket]> = [];
+
+  const server = createServer((downstream) => {
+    const toGateway = connectTo(Number(port), host);
+    downstream.pipe(toGateway).pipe(downstream);
+    for (const socket of [downstream, toGateway]) {
+      socket.on("error", () => undefined);
+    }
+    connections.push([downstream, toGateway]);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "localhost", resolve));
+  const bound = server.address() as AddressInfo;
+
+  return {
+    target: `localhost:${bound.port}`,
+    fallSilent() {
+      for (const [downstream, toGateway] of connections) {
+        downstream.unpipe(toGateway);
+        toGateway.unpipe(downstream);
+        downstream.pause();
+        toGateway.pause();
+      }
+    },
+    close() {
+      for (const pair of connections) {
+        for (const socket of pair) {
+          socket.destroy();
+        }
+      }
+      server.close();
+    },
+  };
 }
 
 /** A status, sent the way the Gateway sends one. */
@@ -1206,6 +1269,34 @@ describe("subscribing to what the Bridge is doing", () => {
       ok: false,
       code: "GATEWAY_UNREACHABLE",
     });
+  });
+
+  it("ends a subscription to a Gateway that fell silent without hanging up", async () => {
+    // The shape of the September 2026 outage, one hop down: a connection
+    // that died without a FIN — an idle NAT mapping forgotten, a host gone —
+    // leaves a stream that reads as open forever, because nothing on this
+    // side ever writes to it. Only a PING can tell that from a quiet house.
+    answers = {
+      subscribe: (call) => {
+        call.write(aChange(Event_Type.TYPE_UPDATE, "kitchen-1"));
+      },
+    };
+
+    const relay = await relayTo(target);
+    try {
+      const watching = watch(
+        connect({ target: relay.target }, { timeMs: 100, timeoutMs: 100 }),
+      );
+      await watching.until(() => watching.notices.length === 1);
+
+      relay.fallSilent();
+      await watching.until(() => watching.ending() !== undefined);
+
+      expect(watching.ending()).toMatchObject({ ok: false });
+      expect(gateway?.isChannelReady()).toBe(false);
+    } finally {
+      relay.close();
+    }
   });
 });
 

@@ -32,6 +32,13 @@ export interface Readiness {
    * that reason.
    */
   channelConnected(): boolean;
-  /** Whether a `Subscribe` is open and has not ended. */
+  /**
+   * Whether a `Subscribe` is open and has not ended.
+   *
+   * Both facts trail a connection that died without a FIN by the channel's
+   * keepalive schedule — `gateway/adapter.ts`'s `DEFAULT_KEEPALIVE`, about six
+   * and a half minutes — because until a PING goes unanswered there is nothing
+   * to tell that connection from one to a Gateway with nothing to say.
+   */
   subscribed(): boolean;
 }

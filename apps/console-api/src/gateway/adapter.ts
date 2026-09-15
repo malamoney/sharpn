@@ -142,6 +142,39 @@ export interface Gateway {
 }
 
 /**
+ * How the one channel finds out that a Gateway it can no longer hear is gone.
+ *
+ * A subscription is a stream nothing on this side ever writes to, and a
+ * Gateway that is quiet because nothing in the house changed looks, on the
+ * wire, exactly like one whose connection died without a FIN — Docker
+ * Desktop forgetting an idle NAT mapping, the Gateway's host rebooting, a
+ * cable pulled. Without pings, the stream stays open on this side forever,
+ * `subscribed()` keeps answering `true`, and no Invalidation ever arrives.
+ * With them, an HTTP/2 PING that goes unanswered for `timeoutMs` ends the
+ * transport, the stream fails, and `events/fanout.ts` reopens it.
+ */
+export interface Keepalive {
+  /** How long the channel is quiet before a PING is sent. */
+  timeMs: number;
+  /** How long a PING may go unanswered before the connection is given up. */
+  timeoutMs: number;
+}
+
+/**
+ * Six minutes, and not less. The Gateway serves gRPC with Python's defaults,
+ * which count a PING arriving under five minutes after the last one, with no
+ * data between, as a strike, and hang up on the second — so a keener schedule
+ * would be this process disconnecting itself and calling it the Gateway's
+ * fault. Six leaves a minute of slack over that floor. A dead stream is
+ * therefore noticed within about six and a half minutes rather than never;
+ * anything quicker needs the Gateway's ping policy changed first.
+ */
+export const DEFAULT_KEEPALIVE: Keepalive = {
+  timeMs: 6 * 60_000,
+  timeoutMs: 20_000,
+};
+
+/**
  * Opens the one channel this process makes to the Gateway.
  *
  * One channel, reused for the life of the process, and never one per request:
@@ -149,7 +182,10 @@ export interface Gateway {
  * making one per request would pay for all three every time while throwing
  * away the thing that recovers from a Gateway restart.
  */
-export function connectToGateway(config: GatewayConfig): Gateway {
+export function connectToGateway(
+  config: GatewayConfig,
+  keepalive: Keepalive = DEFAULT_KEEPALIVE,
+): Gateway {
   const credentials = gatewayCredentials(config);
   const lighting = new LightingServiceClient(config.target, credentials, {
     // "No retries on mutations, ever, anywhere" has to be true of the library
@@ -159,6 +195,11 @@ export function connectToGateway(config: GatewayConfig): Gateway {
     // nothing here having decided to. Off, and the guarantee holds by
     // construction rather than by the Gateway currently not sending a policy.
     "grpc.enable_retries": 0,
+    // Not `grpc.keepalive_permit_without_calls`: the subscription is a call,
+    // and is always open, so the channel is never without one for long — and
+    // a channel with no call on it has nothing a dead connection could lose.
+    "grpc.keepalive_time_ms": keepalive.timeMs,
+    "grpc.keepalive_timeout_ms": keepalive.timeoutMs,
   });
   // The same channel, not a second one: `EventServiceClient` is a second set
   // of typed methods over the one connection this process makes.
