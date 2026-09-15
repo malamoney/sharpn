@@ -14,6 +14,7 @@ export { mintCorrelationId } from "./correlation.js";
 export type {
   Gateway,
   GatewayConfig,
+  Keepalive,
   Subscriber,
   Subscription,
 } from "./adapter.js";
