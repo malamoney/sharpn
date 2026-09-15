@@ -52,7 +52,8 @@ docs/adr                         The decisions that are hard to reverse.
 docs/deployment.md               First-time setup on the Mac: secrets, TLS,
                                  build and start.
 docs/runbooks                    What to do when a token or certificate needs
-                                 to change, or a deploy needs to be undone.
+                                 to change, a deploy needs to be undone, or
+                                 the Console stops following the Hue app.
 docker-compose.yml               The two containers — `nginx` and
                                  `console-api` — and the network, secrets and
                                  volumes between them.
