@@ -95,6 +95,19 @@ reported by `GET /version` and recorded as image labels
 registry, the checkout on this Mac plus this stamp is the entire answer to
 "which version is running" (ADR 0003).
 
+## 5. Prove it
+
+```
+scripts/smoke-live-updates.sh
+```
+
+Opens a browser's event stream, flips one Light through the Console API, and
+waits for the `light.changed` that says so to come back down the stream. One
+bulb blinks for a second. This is the check `/readyz` cannot make: a
+subscription can be `established` to a Gateway that has itself gone deaf to
+the Bridge, and only asking for an event tells the two apart
+([live-updates-stopped.md](./runbooks/live-updates-stopped.md)).
+
 ## Runbooks
 
 Once this is running, see [`docs/runbooks/`](./runbooks/) for what to do
@@ -104,3 +117,4 @@ when:
 - [the Gateway's certificate needs to change](./runbooks/certificate-rotation.md)
 - [the Gateway refuses to pair after an Application Key is revoked](./runbooks/revoked-application-key-recovery.md)
 - [a deploy needs to be undone](./runbooks/rollback.md)
+- [the Console stops following changes made elsewhere](./runbooks/live-updates-stopped.md)
