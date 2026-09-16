@@ -62,7 +62,7 @@ separate gRPC service (the **Gateway**, from the sibling repo
 nvm use               # Node 24
 npm ci
 npm run typecheck     # all three workspaces
-npm test              # console-api (101 tests) + console (265 tests)
+npm test              # console-api (265 tests) + console (101 tests)
 npm run dev -w apps/console         # Vite dev server, proxies /api → :3000
 npm start -w apps/console-api       # needs GATEWAY_TARGET + four secret files
 scripts/e2e.sh up && npm run test:gateway -w apps/e2e   # full Docker stack
@@ -564,7 +564,7 @@ shape.
 | Item | Severity | Notes |
 | --- | --- | --- |
 | Duplicated contract in `apps/console/src/api/types.ts` | **Medium** | 50-item and 16-item lists copied by hand; no drift test; contradicts `browser-safe.test.ts`'s comment |
-| `README.md` "Working on it" and "Status" sections are stale | Low | Says "the Console has nothing to test yet" (it has 265 tests) and "The Console still shows no Lights" (it does) |
+| `README.md` "Working on it" and "Status" sections are stale | Low | Says "the Console has nothing to test yet" (it has 101 tests) and "The Console still shows no Lights" (it does) |
 | `meter.spend()` sweeps **every** key on every call | Low | O(keys × entries) per request. Fine for a household; a cheap improvement is to sweep only the caller's key and run a periodic GC |
 | Module-level mutable singletons in the Console (`unauthenticatedListeners` in `api/client.ts`, `scheduledFollowUps` WeakMap in `raceAwareInvalidate.ts`) | Low | Reasonable, but they make test isolation depend on cleanup |
 | `useUpdateLight` `fireRef` / `settle` closure dance | Low | Correct, but the hardest-to-follow 40 lines in the Console. A small reducer or state machine would read better |
@@ -587,8 +587,8 @@ shape.
 
 | Suite | Files | Tests | Kind | Runtime |
 | --- | --- | --- | --- | --- |
-| `apps/console-api` | 19 | **101** | Unit + in-process integration (real TLS gRPC against an in-process fake Gateway; Express via `http` requests) | ~7 s (one deliberate 5 s deadline test) |
-| `apps/console` | 18 | **265** | Unit (domain) + component (Testing Library, jsdom, mocked `fetch`/`EventSource`) | ~4 s |
+| `apps/console-api` | 18 | **265** | Unit + in-process integration (real TLS gRPC against an in-process fake Gateway; Express via `http` requests) | ~7 s (one deliberate 5 s deadline test) |
+| `apps/console` | 19 | **101** | Unit (domain) + component (Testing Library, jsdom, mocked `fetch`/`EventSource`) | ~4 s |
 | `apps/e2e/gateway` | 1 | ~10 | **Integration** against the *real* Gateway + fake Bridge in Docker | minutes (CI only) |
 | `apps/e2e/playwright` | 4 specs | 4 | **End-to-end** through real Nginx, TLS, SSE, two browser contexts | minutes (CI only) |
 

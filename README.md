@@ -45,6 +45,10 @@ apps/console-api/src/server.ts   The process. Reads its settings, opens the one
                                  channel, holds one subscription, and listens.
 apps/console-api/openapi.json    Those schemas as an OpenAPI document.
                                  Generated. Not edited.
+apps/e2e                         The Console API against the real Gateway
+                                 and a fake Bridge, and Playwright through
+                                 the real Nginx. Both need the stack
+                                 docker-compose.e2e.yml describes.
 proto/hue/v1                     The Gateway's contract, vendored. Not edited
                                  here.
 proto/PINNED                     The revision it is vendored from.
@@ -57,6 +61,11 @@ docs/runbooks                    What to do when a token or certificate needs
 docker-compose.yml               The two containers — `nginx` and
                                  `console-api` — and the network, secrets and
                                  volumes between them.
+docker-compose.e2e.yml           Those two plus the real Gateway and a fake
+                                 Bridge, for CI. `scripts/e2e.sh` runs it.
+scripts                          Vendoring and checking the contract,
+                                 generating the OpenAPI document, deploying,
+                                 the e2e stack, and the smoke probe.
 ```
 
 ## Deploying
@@ -69,10 +78,18 @@ and rolling back.
 
 ## Working on it
 
-Node 24, as `.nvmrc` says. `npm ci` installs both workspaces, and `npm run
-build`, `npm run typecheck` and `npm test` each run in every workspace that
-defines them — the Console has nothing to test yet, so `npm test` is currently
-the Console API's alone.
+Node 24, as `.nvmrc` says. `npm ci` installs all three workspaces, and `npm
+run build`, `npm run typecheck` and `npm test` each run in every workspace
+that defines them — `npm test` is the Console API's suite and the Console's,
+one after the other. `apps/e2e` defines neither `build` nor `test`: its two
+suites run against the Compose stack `docker-compose.e2e.yml` describes, and
+`scripts/e2e.sh up` is what brings that up before `npm run test:gateway` or
+`npm run test:playwright` in that workspace is worth running.
+
+`npm run dev -w apps/console` serves the Console from Vite and proxies `/api`
+to a Console API on `localhost:3000` — the same single origin Nginx gives it
+once built, so the session cookie and the CSRF check behave the same way in
+development as deployed.
 
 The Gateway's `.proto` files are vendored rather than fetched during a build,
 and the TypeScript generated from them is committed, so no image build needs
@@ -104,11 +121,25 @@ hash for the shared password is produced with the same library the service
 verifies against:
 
 ```
-npm run --workspace=apps/console-api hash-password -- 'the household password' > password-hash
+node apps/console-api/scripts/hash-password.mjs 'the household password' > secrets/password-hash
 ```
 
-Rotating either file — a new password, or a fresh signing secret — signs
-every browser in the house out at once; see [ADR
+`node` directly, and not `npm run hash-password`: `npm run` prints its own
+banner to stdout ahead of the script's output, so redirecting it writes two
+lines of banner — the second of which quotes the password in plain text —
+and then the hash, and the process refuses a file shaped like that at
+startup. A password that contains a quote or a `$` is safer read from the
+terminal than quoted for the shell:
+
+```
+pw=$(cat) && node apps/console-api/scripts/hash-password.mjs "$pw" > secrets/password-hash && unset pw
+```
+
+The process reads the file once, so `docker compose restart console-api`
+is what takes a new one — and a new password leaves every browser already
+signed in exactly as it was, because a session is signed with
+`SESSION_SECRET_FILE` and not with the password. Rotating that secret is what
+signs every browser in the house out at once; see [ADR
 0006](./docs/adr/0006-stateless-signed-session-no-revocation.md) for why that
 is the only grain a shared password has.
 
@@ -136,8 +167,8 @@ the shapes it produces going missing.
 
 ## Status
 
-The skeleton is built: two workspaces, the Gateway's contract vendored at the
-revision `proto/PINNED` names, and typed bindings generated from it. The
+The skeleton is built: three workspaces, the Gateway's contract vendored at
+the revision `proto/PINNED` names, and typed bindings generated from it. The
 browser-facing contract is defined too — the Light a browser sees, the Command
 it sends, the Acknowledgement it gets back, and the one error envelope every
 failure arrives in — along with the OpenAPI document generated from it.
@@ -180,5 +211,32 @@ treated as one, and a Gap that means this process fell behind the Gateway is
 logged as the bug it is. `/readyz` and the event stream now share the one
 subscription rather than each holding their own.
 
-The Console still shows no Lights. The vocabulary is written down and the six
-decisions that would otherwise read as arbitrary are recorded.
+The Console shows Lights now. A list, sorted by name so a refetch never
+reshuffles it, and a detail page per Light with exactly the controls its
+Capabilities allow — a switch, a brightness slider that floors at the bulb's
+own minimum, a colour temperature slider bounded by what the bulb accepts,
+and a colour picker that draws the gamut the bulb reports or falls back to
+an HSV wheel when it reports none. Every control sends a single-field
+Command, so a colour and a colour temperature cannot be asked for together
+from here at all. What a person asked for is a Pending Command, shown as
+such and never as what is true, and settled by the next read rather than by
+the Acknowledgement (ADR 0001). The Console holds one event stream; an
+Invalidation re-reads that Light wherever a copy is held, a stream that
+drops says so in a banner, and the whole collection is re-read only when
+the Console API's own subscription comes back. Sliders send at most one
+Command per Light at a time and hold the latest value for when it settles.
+
+It is deployed, too. Two containers on the Mac — Nginx serving the build
+and terminating TLS, the Console API behind it on a network nothing else
+reaches — with every secret a file, both images stamped with the checkout
+they came from, and a runbook for each of the things that can go wrong
+afterward. CI brings up the real Gateway and a fake Bridge from
+`malamoney/hue` at the pinned revision and drives the Console API against
+them, then Playwright through the real Nginx for the cases where every
+layer has to be right at once. The one channel to the Gateway pings it, so
+a subscription that died without a FIN is noticed in minutes rather than
+never, and `scripts/smoke-live-updates.sh` asks the running deployment for
+an event, which is the one thing `/readyz` cannot.
+
+The vocabulary is written down and the six decisions that would otherwise
+read as arbitrary are recorded.

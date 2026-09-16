@@ -33,7 +33,7 @@ Four files, none of them committed (`.gitignore`), each becoming
 | --- | --- |
 | `secrets/gateway-certificate` | The Gateway's self-signed PEM (ADR 0004). Copy it from the NixOS box; it is not a secret and publishing it would be harmless, but it is the Console API's only trust root for that hop. |
 | `secrets/gateway-token` | The Gateway Token, exactly as the Gateway's own config holds it. No trailing newline needed — both ends trim what they read. |
-| `secrets/password-hash` | An argon2id hash of the one password this deployment accepts. Generate it with `npm run --workspace=apps/console-api hash-password -- '<password>'` and write only the hash it prints. |
+| `secrets/password-hash` | An argon2id hash of the one password this deployment accepts. Generate it with `node apps/console-api/scripts/hash-password.mjs '<password>' > secrets/password-hash` — `node` directly, not `npm run`, whose banner would land in the file ahead of the hash with the password quoted in it (the README's "Working on it" has the safe form for a password with shell characters in it). Changing it later is the same command and `docker compose restart console-api`; it signs nobody out, because sessions are signed with the secret below, not with the password. |
 | `secrets/session-secret` | A random signing key for the session cookie (`apps/console-api/src/auth/session.ts`). `openssl rand -base64 32` is enough; nothing reads it back except this process. |
 
 None of these are read as environment variables — see `config.ts`'s own
