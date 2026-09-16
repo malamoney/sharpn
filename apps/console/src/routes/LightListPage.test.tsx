@@ -55,6 +55,21 @@ describe("the Light list", () => {
     });
   });
 
+  it("marks every card with the Hue brand, an off Light's included", async () => {
+    vi.mocked(lightsApi.listLights).mockResolvedValue([
+      aLight({ id: "1", name: "Lit", on: true }),
+      aLight({ id: "2", name: "Dark", on: false }),
+    ]);
+
+    renderWithProviders(<LightListPage />);
+
+    const cards = await screen.findAllByRole("listitem");
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(within(card).getByRole("img", { name: "Philips Hue" })).toBeVisible();
+    }
+  });
+
   it("distinguishes a Bridge-side outage from a generic failure", async () => {
     vi.mocked(lightsApi.listLights).mockRejectedValue(
       new ApiError({
