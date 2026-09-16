@@ -121,11 +121,25 @@ hash for the shared password is produced with the same library the service
 verifies against:
 
 ```
-npm run --workspace=apps/console-api hash-password -- 'the household password' > password-hash
+node apps/console-api/scripts/hash-password.mjs 'the household password' > secrets/password-hash
 ```
 
-Rotating either file — a new password, or a fresh signing secret — signs
-every browser in the house out at once; see [ADR
+`node` directly, and not `npm run hash-password`: `npm run` prints its own
+banner to stdout ahead of the script's output, so redirecting it writes two
+lines of banner — the second of which quotes the password in plain text —
+and then the hash, and the process refuses a file shaped like that at
+startup. A password that contains a quote or a `$` is safer read from the
+terminal than quoted for the shell:
+
+```
+pw=$(cat) && node apps/console-api/scripts/hash-password.mjs "$pw" > secrets/password-hash && unset pw
+```
+
+The process reads the file once, so `docker compose restart console-api`
+is what takes a new one — and a new password leaves every browser already
+signed in exactly as it was, because a session is signed with
+`SESSION_SECRET_FILE` and not with the password. Rotating that secret is what
+signs every browser in the house out at once; see [ADR
 0006](./docs/adr/0006-stateless-signed-session-no-revocation.md) for why that
 is the only grain a shared password has.
 
