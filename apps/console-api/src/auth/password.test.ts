@@ -48,4 +48,40 @@ describe("a password check", () => {
 
     expect(() => passwordCheckFrom(file)).toThrow(/empty/);
   });
+
+  it("refuses a file that holds npm's banner ahead of the hash", async () => {
+    // What `npm run hash-password -- '…' > file` actually writes: two lines
+    // of banner, the second quoting the password, and then the hash.
+    // `verify` throws on this, and without the check at startup that throw
+    // reached a browser as a bare 500 at the first login.
+    const file = await fileHolding(
+      "> @sharpn/console-api@0.0.0 hash-password\n" +
+        "> node scripts/hash-password.mjs the-shared-password\n\n" +
+        `${await hash("the-shared-password")}\n`,
+    );
+
+    expect(() => passwordCheckFrom(file)).toThrow(/does not begin with \$argon2id\$/);
+  });
+
+  it("refuses a file that holds something other than a hash, without quoting it", async () => {
+    const file = await fileHolding("the-shared-password\n");
+
+    expect(() => passwordCheckFrom(file)).toThrow(/does not begin with \$argon2id\$/);
+    expect(() => passwordCheckFrom(file)).not.toThrow(/the-shared-password/);
+  });
+
+  it("accepts a hash however the file around it is padded", async () => {
+    const file = await fileHolding(`\n  ${await hash("the-shared-password")}  \n\n`);
+    const check = passwordCheckFrom(file);
+
+    expect(await check.matches("the-shared-password")).toBe(true);
+  });
 });
+
+/** A hash file holding exactly `contents`, however malformed. */
+async function fileHolding(contents: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "sharpn-password-hash-"));
+  const file = join(dir, "password-hash");
+  await writeFile(file, contents);
+  return file;
+}
