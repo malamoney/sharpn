@@ -1,15 +1,17 @@
 /**
- * One Light in the grid: its icon and switch across the top, its name (a
- * link to the detail page) and fitting beneath, and — where the Light can
- * be dimmed — a brightness slider that sends the same single-field Command
- * the detail page's does. A Light with no dimming gets the footer row alone,
- * so every card ends the same way.
+ * One Light in the grid: its icon, brand badge and switch across the top,
+ * its name (a link to the detail page) and fitting beneath, and — where the
+ * Light can be dimmed — a brightness slider that sends the same single-field
+ * Command the detail page's does. A Light with no dimming gets the footer
+ * row alone, so every card ends the same way.
  */
-import { Box, Card, Center, Flex, Link, Text } from "@chakra-ui/react";
+import { Box, Card, Center, Flex, Image, Link, Text } from "@chakra-ui/react";
 import { Link as RouterLink } from "react-router";
 
 import type { Light } from "../api/types.js";
+import hueLogo from "../assets/hue-logo.png";
 import { archetypeLabel } from "../domain/archetypeLabel.js";
+import { brandOf, type Brand } from "../domain/brandOf.js";
 import { usePendingCommand } from "../pending/PendingCommandsProvider.js";
 import { useUpdateLight } from "../queries/useUpdateLight.js";
 import { ArchetypeIcon } from "./ArchetypeIcon.js";
@@ -32,7 +34,10 @@ export function LightCard({
     <Card.Root as="li" rounded="16px" border="none" shadow="card" bg="white">
       <Card.Body p={{ base: "18px", md: "5" }} gap="14px">
         <Flex align="flex-start" justify="space-between">
-          <LightIconTile archetype={light.archetype} on={on} />
+          <Flex align="center" gap="10px">
+            <LightIconTile archetype={light.archetype} on={on} />
+            <BrandBadge brand={brandOf(light)} on={on} />
+          </Flex>
           <OnOffToggle
             on={light.on}
             pendingOn={pending?.command.on}
@@ -102,6 +107,38 @@ export function LightIconTile({
     >
       <ArchetypeIcon archetype={archetype} />
     </Center>
+  );
+}
+
+/**
+ * The logo of the brand that made a Light, shipped at twice its rendered
+ * size so it is sharp on a Retina display. The name is what a screen reader
+ * says: the badge tells a person which bulb is which, so it is not
+ * decorative.
+ */
+const BRAND_MARKS: Record<Brand, { src: string; name: string }> = {
+  hue: { src: hueLogo, name: "Philips Hue" },
+};
+
+/**
+ * The 24px brand mark beside a Light's tile: the tile's corner treatment at
+ * its own scale, a hairline so the white disc has an edge on a white card,
+ * and ghosted with the tile while the Light is off — still there, because
+ * the brand is still true, but no brighter than anything else on the card.
+ */
+export function BrandBadge({ brand, on }: { brand: Brand; on: boolean }) {
+  const mark = BRAND_MARKS[brand];
+  return (
+    <Image
+      src={mark.src}
+      alt={mark.name}
+      boxSize="24px"
+      rounded="7px"
+      bg="white"
+      border="1px solid"
+      borderColor="gray.100"
+      opacity={on ? 1 : 0.4}
+    />
   );
 }
 
