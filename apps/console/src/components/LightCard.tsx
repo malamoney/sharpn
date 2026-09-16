@@ -116,22 +116,23 @@ export function LightIconTile({
  * says: the badge tells a person which bulb is which, so it is not
  * decorative.
  */
-const BRAND_MARKS: Record<Brand, { src: string; name: string }> = {
+const BRAND_LOGOS: Record<Brand, { src: string; name: string }> = {
   hue: { src: hueLogo, name: "Philips Hue" },
 };
 
 /**
- * The 24px brand mark beside a Light's tile: the tile's corner treatment at
- * its own scale, a hairline so the white disc has an edge on a white card,
- * and ghosted with the tile while the Light is off — still there, because
- * the brand is still true, but no brighter than anything else on the card.
+ * The 24px brand badge beside a Light's tile (not `BrandMark`, which is the
+ * Console's own logo): the tile's corner treatment at its own scale, a
+ * hairline so the white disc has an edge on a white card, and ghosted with
+ * the tile while the Light is off — still there, because the brand is still
+ * true, but no brighter than anything else on the card.
  */
 export function BrandBadge({ brand, on }: { brand: Brand; on: boolean }) {
-  const mark = BRAND_MARKS[brand];
+  const logo = BRAND_LOGOS[brand];
   return (
     <Image
-      src={mark.src}
-      alt={mark.name}
+      src={logo.src}
+      alt={logo.name}
       boxSize="24px"
       rounded="7px"
       bg="white"

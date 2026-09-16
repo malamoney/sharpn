@@ -55,7 +55,7 @@ describe("the Light list", () => {
     });
   });
 
-  it("marks every card with the Hue brand, an off Light's ghosted rather than dropped", async () => {
+  it("marks every card with the Hue brand, an off Light's included", async () => {
     vi.mocked(lightsApi.listLights).mockResolvedValue([
       aLight({ id: "1", name: "Lit", on: true }),
       aLight({ id: "2", name: "Dark", on: false }),
@@ -63,10 +63,7 @@ describe("the Light list", () => {
 
     renderWithProviders(<LightListPage />);
 
-    const badges = await screen.findAllByRole("img", { name: "Philips Hue" });
-    expect(badges).toHaveLength(2);
-
-    const cards = screen.getAllByRole("listitem");
+    const cards = await screen.findAllByRole("listitem");
     expect(cards).toHaveLength(2);
     for (const card of cards) {
       expect(within(card).getByRole("img", { name: "Philips Hue" })).toBeVisible();
